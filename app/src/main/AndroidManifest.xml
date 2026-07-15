@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Parcours de demande via notification (variante T2-A). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Variante T2-B uniquement : exemption de lancement d'activité en arrière-plan. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <application
+        android:name=".App"
+        android:label="@string/app_name"
+        android:icon="@drawable/ic_launcher"
+        android:theme="@style/Theme.BlockerSpike"
+        android:allowBackup="false">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- N'imite jamais l'application bloquée : écran neutre, hors des récents. -->
+        <activity
+            android:name=".gate.BlockGateActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop" />
+
+        <service
+            android:name=".service.BlockerAccessibilityService"
+            android:exported="false"
+            android:label="@string/accessibility_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+    </application>
+</manifest>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Blocker Spike</string>
+    <string name="accessibility_service_label">Albugimed Blocker Spike</string>
+    <string name="accessibility_service_description">Détecte le package de l\'application au premier plan pour interrompre l\'ouverture des applications bloquées. Ne lit aucun contenu d\'écran.</string>
+    <string name="channel_block_name">Interceptions</string>
+    <string name="notif_blocked_title">Application bloquée</string>
+    <string name="notif_blocked_text">%1$s est bloquée. Touchez pour ouvrir le parcours de demande.</string>
+</resources>
