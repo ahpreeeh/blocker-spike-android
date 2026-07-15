@@ -53,6 +53,7 @@ fun MainScreen() {
     val repo = Graph.policyRepository
     val policy by repo.policy.collectAsStateWithLifecycle(initialValue = PolicyState())
     val logEntries by InterceptionLog.entries.collectAsStateWithLifecycle()
+    val metrics = InterceptionLog.metrics()
     val scope = rememberCoroutineScope()
 
     var diagnostics by remember { mutableStateOf(readDiagnostics(context)) }
@@ -112,6 +113,13 @@ fun MainScreen() {
                         "Dernière interception : " +
                             (lastIntercept?.let { "${formatTime(it.atMillis)} — ${it.message}" }
                                 ?: "aucune"),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        "Mesures S1 : ${metrics.interceptionCount} interception(s), " +
+                            "retour accueil OK ${metrics.successfulHomeActions}/" +
+                            "${metrics.interceptionCount}, médiane " +
+                            (metrics.medianLatencyMillis?.let { "$it ms" } ?: "—"),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -188,7 +196,17 @@ fun MainScreen() {
             }
 
             item {
-                Text("Journal", style = MaterialTheme.typography.titleMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Journal",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = InterceptionLog::clear) { Text("Effacer") }
+                }
             }
             items(logEntries.take(50)) { entry ->
                 Text(

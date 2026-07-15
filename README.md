@@ -9,10 +9,10 @@ avec expiration, override de panne, diagnostic et journal minimal.
 ## Ouvrir et compiler
 
 1. Android Studio (Narwhal ou plus récent, JDK 17) → **File → Open** → ce dossier.
-2. Le binaire `gradle-wrapper.jar` n'est pas inclus (fichier binaire). Deux options :
-   - Android Studio propose en général de régénérer le wrapper au premier sync ;
-   - ou, si Gradle est installé : `gradle wrapper --gradle-version 8.14.3` à la racine.
-3. Brancher le Poco (débogage USB activé) → **Run 'app'**.
+2. Synchroniser le projet. Le wrapper Gradle 8.14.3 est inclus ; aucune installation
+   globale de Gradle n'est nécessaire.
+3. Lancer `./gradlew test` (Windows : `gradlew.bat test`).
+4. Brancher le Poco (débogage USB activé) → **Run 'app'**.
 
 ## Arborescence
 
@@ -48,13 +48,16 @@ app/src/main/java/com/albugimed/blockerspike/
 ## Choix d'implémentation à connaître
 
 - **T2-B** : le lancement direct depuis le service n'est tenté que si
-  `SYSTEM_ALERT_WINDOW` est accordé (exemption de lancement en arrière-plan
-  d'Android 16) ; sinon repli automatique sur la notification, et l'échec est
-  journalisé. C'est exactement le comparatif demandé par le protocole §4.
+  `SYSTEM_ALERT_WINDOW` est accordé. Le simple retour de `startActivity()` ne
+  prouve pas que l'écran s'est affiché : l'activité confirme son ouverture avec
+  un token et, sans confirmation sous 750 ms, le service se replie sur la
+  notification. La stabilité reste à mesurer sur HyperOS.
 - **Stockage illisible** : le flux de politique émet `storageHealthy = false`
   et aucun blocage (fail-open) — l'utilisateur n'est jamais enfermé sans
   recours, le diagnostic l'affiche, l'override reste accessible (§5, S5).
-- **Journal en mémoire** : volontairement non persistant ; un journal vide
+- **Journal en mémoire** : il enregistre aussi les changements de politique,
+  le succès du retour accueil et une latence estimée depuis l'événement Android.
+  Il reste volontairement non persistant ; un journal vide
   après une longue veille est aussi un signal de kill HyperOS (S3/S4).
 - **`minSdk = 36`** : le spike ne vise que le Poco sous Android 16 ; à abaisser
   si un second appareil de test apparaît.
@@ -63,6 +66,6 @@ app/src/main/java/com/albugimed/blockerspike/
 
 ## Scénarios de test
 
-Suivre S1 → S5 du protocole (§7) et confronter aux critères du §8 :
+Suivre [PHONE_TEST.md](PHONE_TEST.md) pour S1 → S5 et confronter aux critères :
 ≥ 19/20 interceptions, délai médian < 1 s, zéro faux positif, état conservé
 après redémarrage, override fonctionnel hors ligne.

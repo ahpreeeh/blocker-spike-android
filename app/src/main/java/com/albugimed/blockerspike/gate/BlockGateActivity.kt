@@ -37,6 +37,7 @@ class BlockGateActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val blockedPackage = intent.getStringExtra(EXTRA_PACKAGE) ?: "(package inconnu)"
+        GateLaunchTracker.markShown(intent.getStringExtra(EXTRA_LAUNCH_TOKEN))
         setContent {
             MaterialTheme {
                 GateScreen(blockedPackage = blockedPackage, onDone = { finish() })
@@ -44,11 +45,23 @@ class BlockGateActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        GateLaunchTracker.markShown(intent.getStringExtra(EXTRA_LAUNCH_TOKEN))
+    }
+
     companion object {
         private const val EXTRA_PACKAGE = "blocked_package"
+        private const val EXTRA_LAUNCH_TOKEN = "launch_token"
 
-        fun intent(context: Context, blockedPackage: String): Intent =
-            Intent(context, BlockGateActivity::class.java).putExtra(EXTRA_PACKAGE, blockedPackage)
+        fun intent(
+            context: Context,
+            blockedPackage: String,
+            launchToken: String? = null,
+        ): Intent = Intent(context, BlockGateActivity::class.java)
+            .putExtra(EXTRA_PACKAGE, blockedPackage)
+            .apply { if (launchToken != null) putExtra(EXTRA_LAUNCH_TOKEN, launchToken) }
     }
 }
 

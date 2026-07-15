@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Périmètre minimal : uniquement les changements de fenêtre, aucun contenu d'écran
-    (canRetrieveWindowContent="false"). typeWindowsChanged est déclaré pour le comparatif
-    du protocole mais ne sera délivré que si flagRetrieveInteractiveWindows est ajouté.
+    Périmètre minimal : uniquement les changements d'état de fenêtre, aucun contenu
+    d'écran (canRetrieveWindowContent="false"). typeWindowsChanged ne sera ajouté
+    que si les essais réels montrent des détections manquantes.
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowsChanged"
+    android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:notificationTimeout="50"
     android:canRetrieveWindowContent="false"
     android:description="@string/accessibility_service_description"
-    android:settingsActivityName="com.albugimed.blockerspike.MainActivity" />
+    android:settingsActivity="com.albugimed.blockerspike.MainActivity" />

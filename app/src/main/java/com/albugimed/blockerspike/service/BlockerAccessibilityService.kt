@@ -5,18 +5,22 @@ import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
+import androidx.core.app.NotificationManagerCompat
 import com.albugimed.blockerspike.App
 import com.albugimed.blockerspike.Graph
 import com.albugimed.blockerspike.R
 import com.albugimed.blockerspike.gate.BlockGateActivity
+import com.albugimed.blockerspike.gate.GateLaunchTracker
 import com.albugimed.blockerspike.log.InterceptionLog
 import com.albugimed.blockerspike.policy.PolicyState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -46,6 +50,7 @@ class BlockerAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        val receivedAt = SystemClock.uptimeMillis()
         val pkg = event.packageName?.toString() ?: return
         if (pkg == packageName || pkg in launcherPackages || pkg in SYSTEM_PACKAGES) return
 
@@ -61,23 +66,50 @@ class BlockerAccessibilityService : AccessibilityService() {
         lastInterceptedAt = now
 
         val homeOk = performGlobalAction(GLOBAL_ACTION_HOME)
+        val interruptedAt = SystemClock.uptimeMillis()
+        val estimatedLatency = (interruptedAt - event.eventTime).coerceAtLeast(0L)
         InterceptionLog.add(
             InterceptionLog.TAG_INTERCEPT,
-            "$pkg intercepté — retour accueil ${if (homeOk) "OK" else "ÉCHEC"}",
+            "$pkg intercepté — retour accueil ${if (homeOk) "OK" else "ÉCHEC"} — " +
+                "latence estimée ${estimatedLatency} ms " +
+                "(traitement ${interruptedAt - receivedAt} ms)",
+            packageName = pkg,
+            latencyMillis = estimatedLatency,
+            homeActionSucceeded = homeOk,
         )
 
         if (policy.variantB && Settings.canDrawOverlays(this)) {
-            // T2-B : SYSTEM_ALERT_WINDOW accordé => exemption de lancement en
-            // arrière-plan. Repli sur la notification si Android 16 refuse.
+            // startActivity() peut réussir sans que l'activité soit réellement
+            // affichée. Un token confirmé dans onCreate permet le repli différé.
+            val token = GateLaunchTracker.register()
             runCatching {
                 startActivity(
-                    BlockGateActivity.intent(this, pkg).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    BlockGateActivity.intent(this, pkg, token)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 )
-                InterceptionLog.add(InterceptionLog.TAG_INTERCEPT, "T2-B : écran de blocage lancé")
+                scope.launch {
+                    delay(GATE_CONFIRMATION_MILLIS)
+                    if (GateLaunchTracker.consumeWasShown(token)) {
+                        InterceptionLog.add(
+                            InterceptionLog.TAG_GATE,
+                            "T2-B confirmé : écran de blocage affiché",
+                            packageName = pkg,
+                        )
+                    } else {
+                        InterceptionLog.add(
+                            InterceptionLog.TAG_GATE,
+                            "T2-B non confirmé — repli notification",
+                            packageName = pkg,
+                        )
+                        postBlockNotification(pkg)
+                    }
+                }
             }.onFailure { e ->
+                GateLaunchTracker.discard(token)
                 InterceptionLog.add(
-                    InterceptionLog.TAG_INTERCEPT,
+                    InterceptionLog.TAG_GATE,
                     "T2-B refusé (${e.javaClass.simpleName}) — repli notification",
+                    packageName = pkg,
                 )
                 postBlockNotification(pkg)
             }
@@ -97,6 +129,14 @@ class BlockerAccessibilityService : AccessibilityService() {
     }
 
     private fun postBlockNotification(pkg: String) {
+        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) {
+            InterceptionLog.add(
+                InterceptionLog.TAG_ERROR,
+                "Notification impossible : autorisation désactivée",
+                packageName = pkg,
+            )
+            return
+        }
         val pending = PendingIntent.getActivity(
             this,
             pkg.hashCode(),
@@ -110,7 +150,15 @@ class BlockerAccessibilityService : AccessibilityService() {
             .setContentIntent(pending)
             .setAutoCancel(true)
             .build()
-        getSystemService(NotificationManager::class.java).notify(pkg.hashCode(), notification)
+        runCatching {
+            getSystemService(NotificationManager::class.java).notify(pkg.hashCode(), notification)
+        }.onFailure { error ->
+            InterceptionLog.add(
+                InterceptionLog.TAG_ERROR,
+                "Échec notification : ${error.javaClass.simpleName}",
+                packageName = pkg,
+            )
+        }
     }
 
     private fun resolveLauncherPackages(): Set<String> {
@@ -122,6 +170,7 @@ class BlockerAccessibilityService : AccessibilityService() {
 
     private companion object {
         const val DEBOUNCE_MILLIS = 1_500L
+        const val GATE_CONFIRMATION_MILLIS = 750L
         val SYSTEM_PACKAGES = setOf("android", "com.android.systemui")
     }
 }
