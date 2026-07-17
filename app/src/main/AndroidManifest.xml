@@ -29,6 +29,12 @@
             android:excludeFromRecents="true"
             android:launchMode="singleTop" />
 
+        <!-- Processus séparé : un kill mémoire de l'inférence ne tue pas le bloqueur (T3 §4). -->
+        <service
+            android:name=".inference.InferenceService"
+            android:process=":inference"
+            android:exported="false" />
+
         <service
             android:name=".service.BlockerAccessibilityService"
             android:exported="false"

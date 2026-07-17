@@ -49,5 +49,8 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     debugImplementation(libs.androidx.compose.ui.tooling)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.litertlm.android)
     testImplementation(libs.junit)
+    // Les tests JVM ont besoin du vrai org.json (celui d'android.jar est un stub).
+    testImplementation(libs.org.json)
 }

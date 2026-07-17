@@ -33,6 +33,7 @@ object InterceptionLog {
     const val TAG_GATE = "gate"
     const val TAG_POLICY = "policy"
     const val TAG_ERROR = "error"
+    const val TAG_AI = "ai"
 
     private const val MAX_ENTRIES = 200
 
