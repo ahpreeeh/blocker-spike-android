@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
@@ -30,12 +31,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.albugimed.blockerspike.BuildConfig
 import com.albugimed.blockerspike.Graph
 import com.albugimed.blockerspike.diagnostics.openAccessibilitySettings
 import com.albugimed.blockerspike.diagnostics.openBatterySettings
+import com.albugimed.blockerspike.diagnostics.openDeviceAdminSettings
+import com.albugimed.blockerspike.diagnostics.openExactAlarmSettings
 import com.albugimed.blockerspike.diagnostics.openNotificationSettings
 import com.albugimed.blockerspike.diagnostics.openOverlaySettings
 import com.albugimed.blockerspike.diagnostics.readDiagnostics
+import com.albugimed.blockerspike.gate.BlockGateActivity
+import com.albugimed.blockerspike.inference.ModelLocator
 import com.albugimed.blockerspike.log.InterceptionLog
 import com.albugimed.blockerspike.policy.PolicyState
 import kotlinx.coroutines.launch
@@ -55,14 +61,75 @@ fun MainScreen() {
     val logEntries by InterceptionLog.entries.collectAsStateWithLifecycle()
     val metrics = InterceptionLog.metrics()
     val scope = rememberCoroutineScope()
+    val ownerRuntime by Graph.deviceOwnerController.runtime.collectAsStateWithLifecycle()
 
     var diagnostics by remember { mutableStateOf(readDiagnostics(context)) }
+    var localModelPath by remember {
+        mutableStateOf(ModelLocator.findModel(context).getOrNull()?.absolutePath)
+    }
     LifecycleResumeEffect(Unit) {
         diagnostics = readDiagnostics(context)
+        localModelPath = ModelLocator.findModel(context).getOrNull()?.absolutePath
         onPauseOrDispose { }
     }
 
     var newPackage by remember { mutableStateOf("") }
+    var showOwnerRemovalDialog by remember { mutableStateOf(false) }
+    var showOwnershipTransferDialog by remember { mutableStateOf(false) }
+
+    if (showOwnershipTransferDialog) {
+        AlertDialog(
+            onDismissRequest = { showOwnershipTransferDialog = false },
+            title = { Text("Transferer le Device Owner ?") },
+            text = {
+                Text(
+                    "Le spike perdra definitivement le role au profit de " +
+                        "l'identite permanente com.albugimed.app."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showOwnershipTransferDialog = false
+                        scope.launch {
+                            Graph.deviceOwnerController.transferToPermanentOwner(policy)
+                        }
+                    },
+                ) { Text("Transferer") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showOwnershipTransferDialog = false }) {
+                    Text("Annuler")
+                }
+            },
+        )
+    }
+
+    if (showOwnerRemovalDialog && !BuildConfig.PERMANENT_IDENTITY) {
+        AlertDialog(
+            onDismissRequest = { showOwnerRemovalDialog = false },
+            title = { Text("Retirer le Device Owner ?") },
+            text = {
+                Text(
+                    "Toutes les applications seront desuspendues avant que le " +
+                        "prototype abandonne son controle de l'appareil."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showOwnerRemovalDialog = false
+                        scope.launch { Graph.deviceOwnerController.relinquishDeviceOwner() }
+                    },
+                ) { Text("Retirer") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showOwnerRemovalDialog = false }) {
+                    Text("Annuler")
+                }
+            },
+        )
+    }
 
     Scaffold { padding ->
         LazyColumn(
@@ -73,22 +140,88 @@ fun MainScreen() {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
+                Section("Suspension systeme") {
+                    Text(
+                        if (ownerRuntime.deviceOwner && BuildConfig.PERMANENT_IDENTITY) {
+                            "Albugimed V0 est le Device Owner permanent."
+                        } else if (ownerRuntime.deviceOwner) {
+                            "Spike Device Owner : pret pour la migration vers Albugimed V0."
+                        } else {
+                            "Device Owner inactif : la suspension systeme ne peut pas etre appliquee."
+                        },
+                        color = if (ownerRuntime.deviceOwner) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        },
+                    )
+                    Text(
+                        "${ownerRuntime.suspendedPackages.size}/${ownerRuntime.managedTargetCount} " +
+                            "package(s) actuellement suspendu(s)",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (BuildConfig.PERMANENT_IDENTITY) {
+                        Text(
+                            if (ownerRuntime.backupServiceEnabled) {
+                                "Sauvegarde Google active"
+                            } else {
+                                "Sauvegarde Google inactive"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Text(
+                        "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    ownerRuntime.lastError?.let { error ->
+                        Text(error, color = MaterialTheme.colorScheme.error)
+                    }
+                    Button(
+                        onClick = { scope.launch { Graph.deviceOwnerController.reconcile(policy) } },
+                    ) { Text("Reappliquer maintenant") }
+                    if (ownerRuntime.deviceOwner && !BuildConfig.PERMANENT_IDENTITY) {
+                        Button(onClick = { showOwnershipTransferDialog = true }) {
+                            Text("Transferer vers Albugimed V0")
+                        }
+                        TextButton(onClick = { showOwnerRemovalDialog = true }) {
+                            Text("Retirer le Device Owner (secours)")
+                        }
+                    }
+                }
+            }
+
+            item {
                 Section("Diagnostic") {
                     DiagnosticRow(
-                        label = "Service d'accessibilité",
-                        ok = diagnostics.accessibilityEnabled,
-                        onOpen = { openAccessibilitySettings(context) },
+                        label = "Device Owner",
+                        ok = diagnostics.deviceOwner,
+                        onOpen = { openDeviceAdminSettings(context) },
                     )
+                    DiagnosticRow(
+                        label = "Alarmes exactes (fin des autorisations)",
+                        ok = diagnostics.exactAlarmsAllowed,
+                        onOpen = { openExactAlarmSettings(context) },
+                    )
+                    if (!BuildConfig.PERMANENT_IDENTITY) {
+                        DiagnosticRow(
+                            label = "Service d'accessibilité",
+                            ok = diagnostics.accessibilityEnabled,
+                            onOpen = { openAccessibilitySettings(context) },
+                        )
+                    }
                     DiagnosticRow(
                         label = "Notifications",
                         ok = diagnostics.notificationsEnabled,
                         onOpen = { openNotificationSettings(context) },
                     )
-                    DiagnosticRow(
-                        label = "Affichage au-dessus des apps (T2-B)",
-                        ok = diagnostics.canDrawOverlays,
-                        onOpen = { openOverlaySettings(context) },
-                    )
+                    if (!BuildConfig.PERMANENT_IDENTITY) {
+                        DiagnosticRow(
+                            label = "Affichage au-dessus des apps (T2-B)",
+                            ok = diagnostics.canDrawOverlays,
+                            onOpen = { openOverlaySettings(context) },
+                        )
+                    }
                     DiagnosticRow(
                         label = "Batterie sans restriction",
                         ok = diagnostics.ignoringBatteryOptimizations,
@@ -120,6 +253,33 @@ fun MainScreen() {
                             "retour accueil OK ${metrics.successfulHomeActions}/" +
                             "${metrics.interceptionCount}, médiane " +
                             (metrics.medianLatencyMillis?.let { "$it ms" } ?: "—"),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+
+            item {
+                Section("IA locale T3") {
+                    Text(
+                        if (localModelPath != null) {
+                            "Modèle local détecté : ${localModelPath?.substringAfterLast('\\')}"
+                        } else {
+                            "Modèle .litertlm absent : toute demande sera refusée proprement."
+                        },
+                        color = if (localModelPath != null) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        },
+                    )
+                    if (localModelPath == null) {
+                        Text(
+                            "Dossier attendu : ${ModelLocator.modelDirectories(context).first().path}",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Text(
+                        "Inférence LiteRT-LM isolée ; validation déterministe avant toute autorisation.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -162,7 +322,10 @@ fun MainScreen() {
                         BlockedPackageRow(
                             pkg = pkg,
                             policy = policy,
-                            onGrant = { scope.launch { repo.grantTemporaryAllowance(pkg, 2 * 60_000L) } },
+                            actuallySuspended = pkg in ownerRuntime.suspendedPackages,
+                            onRequest = {
+                                context.startActivity(BlockGateActivity.intent(context, pkg))
+                            },
                             onRevoke = { scope.launch { repo.revokeAllowance(pkg) } },
                             onRemove = { scope.launch { repo.removeBlockedPackage(pkg) } },
                         )
@@ -170,16 +333,18 @@ fun MainScreen() {
                 }
             }
 
-            item {
-                Section("Variante d'interruption") {
-                    ToggleRow(
-                        title = if (policy.variantB) "T2-B — écran de blocage immédiat"
-                        else "T2-A — retour accueil + notification",
-                        subtitle = "T2-B exige l'affichage au-dessus des apps ; " +
-                            "repli automatique sur la notification sinon.",
-                        checked = policy.variantB,
-                        onCheckedChange = { scope.launch { repo.setVariantB(it) } },
-                    )
+            if (!BuildConfig.PERMANENT_IDENTITY) {
+                item {
+                    Section("Variante d'interruption") {
+                        ToggleRow(
+                            title = if (policy.variantB) "T2-B — écran de blocage immédiat"
+                            else "T2-A — retour accueil + notification",
+                            subtitle = "T2-B exige l'affichage au-dessus des apps ; " +
+                                "repli automatique sur la notification sinon.",
+                            checked = policy.variantB,
+                            onCheckedChange = { scope.launch { repo.setVariantB(it) } },
+                        )
+                    }
                 }
             }
 
@@ -254,7 +419,8 @@ private fun DiagnosticRow(label: String, ok: Boolean, onOpen: () -> Unit) {
 private fun BlockedPackageRow(
     pkg: String,
     policy: PolicyState,
-    onGrant: () -> Unit,
+    actuallySuspended: Boolean,
+    onRequest: () -> Unit,
     onRevoke: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -270,11 +436,15 @@ private fun BlockedPackageRow(
             },
             style = MaterialTheme.typography.bodySmall,
         )
+        Text(
+            if (actuallySuspended) "Android : suspendu" else "Android : non suspendu",
+            style = MaterialTheme.typography.bodySmall,
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             if (allowanceActive) {
                 TextButton(onClick = onRevoke) { Text("Révoquer") }
             } else {
-                TextButton(onClick = onGrant) { Text("Autoriser 2 min") }
+                TextButton(onClick = onRequest) { Text("Demander une exception") }
             }
             TextButton(onClick = onRemove) { Text("Retirer") }
         }

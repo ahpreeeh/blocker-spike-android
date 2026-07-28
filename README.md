@@ -69,3 +69,16 @@ app/src/main/java/com/albugimed/blockerspike/
 Suivre [PHONE_TEST.md](PHONE_TEST.md) pour S1 → S5 et confronter aux critères :
 ≥ 19/20 interceptions, délai médian < 1 s, zéro faux positif, état conservé
 après redémarrage, override fonctionnel hors ligne.
+
+## Addendum Device Owner — 24 juillet 2026
+
+La voie accessibilité/overlay n'ayant pas été suffisamment fiable sur HyperOS,
+le spike applique maintenant la politique avec
+`DevicePolicyManager.setPackagesSuspended()` lorsque l'application est Device
+Owner. Le Poco a confirmé `suspended=true` pour `com.miui.calculator` et a bloqué
+son lancement.
+
+Le cœur coercitif est validé pour le niveau spike. Restent à tester : expiration
+d'une autorisation temporaire, redémarrage/veille, notifications, Instagram,
+override et compatibilité des applications critiques. Voir
+[DEVICE_OWNER_TEST.md](DEVICE_OWNER_TEST.md).

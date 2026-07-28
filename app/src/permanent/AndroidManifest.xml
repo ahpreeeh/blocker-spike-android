@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- La V0 permanente utilise la suspension Device Owner officielle. -->
+    <uses-permission
+        android:name="android.permission.SYSTEM_ALERT_WINDOW"
+        tools:node="remove" />
+
+    <application>
+        <activity
+            android:name="com.albugimed.blockerspike.gate.BlockGateActivity"
+            tools:node="remove" />
+        <service
+            android:name="com.albugimed.blockerspike.service.BlockerAccessibilityService"
+            tools:node="remove" />
+    </application>
+</manifest>

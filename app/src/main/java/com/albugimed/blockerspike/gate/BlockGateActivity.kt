@@ -11,27 +11,29 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.albugimed.blockerspike.Graph
+import com.albugimed.blockerspike.inference.UnlockRequestResult
+import com.albugimed.blockerspike.inference.UnlockRequestStatus
 import com.albugimed.blockerspike.policy.PolicyState
 import kotlinx.coroutines.launch
 
-/**
- * Écran neutre affiché après interception (protocole §3) : explique quelle
- * application a été bloquée et, pour le spike, n'offre que des autorisations
- * manuelles de test. Le parcours de demande à l'IA viendra plus tard.
- */
+/** Neutral gate routing every temporary exception through the T3 validator. */
 class BlockGateActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -67,9 +69,13 @@ class BlockGateActivity : ComponentActivity() {
 
 @Composable
 private fun GateScreen(blockedPackage: String, onDone: () -> Unit) {
-    val repo = Graph.policyRepository
-    val policy by repo.policy.collectAsStateWithLifecycle(initialValue = PolicyState())
+    val policy by Graph.policyRepository.policy.collectAsStateWithLifecycle(
+        initialValue = PolicyState()
+    )
     val scope = rememberCoroutineScope()
+    var justification by remember { mutableStateOf("") }
+    var requestRunning by remember { mutableStateOf(false) }
+    var requestResult by remember { mutableStateOf<UnlockRequestResult?>(null) }
 
     Scaffold { padding ->
         Column(
@@ -80,45 +86,83 @@ private fun GateScreen(blockedPackage: String, onDone: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text("Application bloquée", style = MaterialTheme.typography.headlineSmall)
+            Text("Application bloquee", style = MaterialTheme.typography.headlineSmall)
             Text(blockedPackage, style = MaterialTheme.typography.titleMedium)
             Text(
-                "Le parcours de demande d'autorisation à l'IA arrivera dans une " +
-                    "phase ultérieure. Pour ce spike, seules des autorisations " +
-                    "manuelles de test sont disponibles.",
+                "Explique pourquoi un acces ponctuel est necessaire. Le moteur local " +
+                    "peut refuser et ne peut jamais accorder plus de 30 minutes.",
                 style = MaterialTheme.typography.bodyMedium,
             )
             if (policy.failsafeOverride) {
                 Text(
-                    "Override de panne ACTIF : aucun blocage appliqué.",
+                    "Override de panne ACTIF : aucun blocage applique.",
                     color = MaterialTheme.colorScheme.error,
                 )
             }
             if (!policy.storageHealthy) {
                 Text(
-                    "Stockage illisible : consultez le diagnostic, l'override reste disponible.",
+                    "Stockage illisible : aucune exception ne sera ecrite.",
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+            OutlinedTextField(
+                value = justification,
+                onValueChange = {
+                    justification = it.take(800)
+                    requestResult = null
+                },
+                label = { Text("Justification") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+                enabled = !requestRunning,
+            )
             Button(
                 onClick = {
                     scope.launch {
-                        repo.grantTemporaryAllowance(blockedPackage, 2 * 60_000L)
-                        onDone()
+                        requestRunning = true
+                        requestResult = Graph.unlockRequestCoordinator.request(
+                            packageName = blockedPackage,
+                            justification = justification,
+                        )
+                        requestRunning = false
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Autoriser 2 minutes (test S2)") }
-            OutlinedButton(
-                onClick = {
-                    scope.launch {
-                        repo.grantTemporaryAllowance(blockedPackage, 15 * 60_000L)
-                        onDone()
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Autoriser 15 minutes (test)") }
-            TextButton(onClick = onDone) { Text("Rester bloqué") }
+                enabled = justification.isNotBlank() && !requestRunning,
+            ) {
+                if (requestRunning) {
+                    CircularProgressIndicator()
+                } else {
+                    Text("Demander une exception")
+                }
+            }
+            requestResult?.let { result -> RequestResult(result) }
+            TextButton(onClick = onDone) { Text("Fermer") }
         }
+    }
+}
+
+@Composable
+private fun RequestResult(result: UnlockRequestResult) {
+    Text(
+        when (result.status) {
+            UnlockRequestStatus.ALLOWED ->
+                "Autorise ${result.durationMinutes} min : ${result.message}"
+            UnlockRequestStatus.DENIED -> "Refuse : ${result.message}"
+            UnlockRequestStatus.ERROR -> result.message
+        },
+        color = if (result.status == UnlockRequestStatus.ALLOWED) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.error
+        },
+    )
+    if (result.generationDurationMillis != null) {
+        Text(
+            "Mesures T3 : chargement ${result.loadDurationMillis} ms, " +
+                "generation ${result.generationDurationMillis} ms, " +
+                "pic PSS ${result.peakPssKb?.div(1024)} Mo",
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
 }

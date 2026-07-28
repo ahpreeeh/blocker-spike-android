@@ -10,3 +10,8 @@ captures/
 *.apk
 *.aab
 output-metadata.json
+
+# Cle de signature permanente et secrets locaux (jamais versionnes).
+signing/*.p12
+signing/*.jks
+signing/*-signing.properties

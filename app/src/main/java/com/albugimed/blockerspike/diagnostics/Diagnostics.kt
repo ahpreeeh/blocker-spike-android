@@ -1,5 +1,7 @@
 package com.albugimed.blockerspike.diagnostics
 
+import android.app.AlarmManager
+import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -7,10 +9,14 @@ import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
+import com.albugimed.blockerspike.admin.OwnerIdentity
 import com.albugimed.blockerspike.service.BlockerAccessibilityService
 
 /** Autorisations et accès à vérifier sur l'appareil (protocole §6). */
 data class DiagnosticsState(
+    val deviceAdminActive: Boolean = false,
+    val deviceOwner: Boolean = false,
+    val exactAlarmsAllowed: Boolean = false,
     val accessibilityEnabled: Boolean = false,
     val notificationsEnabled: Boolean = false,
     val canDrawOverlays: Boolean = false,
@@ -19,12 +25,33 @@ data class DiagnosticsState(
 
 fun readDiagnostics(context: Context): DiagnosticsState {
     val powerManager = context.getSystemService(PowerManager::class.java)
+    val dpm = context.getSystemService(DevicePolicyManager::class.java)
+    val alarmManager = context.getSystemService(AlarmManager::class.java)
+    val admin = OwnerIdentity.adminComponent(context)
     return DiagnosticsState(
+        deviceAdminActive = dpm.isAdminActive(admin),
+        deviceOwner = dpm.isDeviceOwnerApp(context.packageName),
+        exactAlarmsAllowed = alarmManager.canScheduleExactAlarms(),
         accessibilityEnabled = isAccessibilityServiceEnabled(context),
         notificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled(),
         canDrawOverlays = Settings.canDrawOverlays(context),
         ignoringBatteryOptimizations =
             powerManager.isIgnoringBatteryOptimizations(context.packageName),
+    )
+}
+
+fun openDeviceAdminSettings(context: Context) {
+    context.startActivity(
+        Intent(Settings.ACTION_SECURITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    )
+}
+
+fun openExactAlarmSettings(context: Context) {
+    context.startActivity(
+        Intent(
+            Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+            Uri.parse("package:${context.packageName}"),
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     )
 }
 

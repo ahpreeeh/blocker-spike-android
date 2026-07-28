@@ -17,6 +17,8 @@ class BlockPolicyRepository(
     private val context: Context,
     private val timeSource: TimeSource = SystemTimeSource,
 ) {
+    private val defaultBlockedPackages = setOf("com.instagram.android")
+
     private object Keys {
         val BLOCKED = stringSetPreferencesKey("blocked_packages")
 
@@ -47,7 +49,7 @@ class BlockPolicyRepository(
             }
 
             PolicyState(
-                blockedPackages = prefs[Keys.BLOCKED] ?: emptySet(),
+                blockedPackages = prefs[Keys.BLOCKED] ?: defaultBlockedPackages,
                 allowedUntil = allowedUntil,
                 failsafeOverride = prefs[Keys.FAILSAFE_OVERRIDE] ?: false,
                 variantB = prefs[Keys.VARIANT_B] ?: false,
@@ -65,13 +67,13 @@ class BlockPolicyRepository(
         val pkg = packageName.trim()
         if (pkg.isEmpty()) return false
         return mutate("Package bloqué ajouté : $pkg") { prefs ->
-            prefs[Keys.BLOCKED] = (prefs[Keys.BLOCKED] ?: emptySet()) + pkg
+            prefs[Keys.BLOCKED] = (prefs[Keys.BLOCKED] ?: defaultBlockedPackages) + pkg
         }
     }
 
     suspend fun removeBlockedPackage(packageName: String): Boolean =
         mutate("Package retiré : $packageName") { prefs ->
-            prefs[Keys.BLOCKED] = (prefs[Keys.BLOCKED] ?: emptySet()) - packageName
+            prefs[Keys.BLOCKED] = (prefs[Keys.BLOCKED] ?: defaultBlockedPackages) - packageName
             prefs[Keys.ALLOWED_UNTIL] = (prefs[Keys.ALLOWED_UNTIL] ?: emptySet())
                 .filterNot { it.startsWith("$packageName|") }
                 .toSet()
@@ -114,6 +116,16 @@ class BlockPolicyRepository(
     suspend fun setVariantB(enabled: Boolean): Boolean =
         mutate("Variante ${if (enabled) "T2-B" else "T2-A"} sélectionnée") { prefs ->
             prefs[Keys.VARIANT_B] = enabled
+        }
+
+    /** Remplace atomiquement l'etat metier recu pendant le transfert du role. */
+    suspend fun replacePolicy(policy: PolicyState): Boolean =
+        mutate("Politique restauree apres transfert du Device Owner") { prefs ->
+            prefs[Keys.BLOCKED] = policy.blockedPackages
+            prefs[Keys.ALLOWED_UNTIL] = policy.allowedUntil
+                .mapTo(linkedSetOf()) { (packageName, until) -> "$packageName|$until" }
+            prefs[Keys.FAILSAFE_OVERRIDE] = policy.failsafeOverride
+            prefs[Keys.VARIANT_B] = policy.variantB
         }
 
     private suspend fun mutate(

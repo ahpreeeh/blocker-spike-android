@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "BlockerSpike"
+rootProject.name = "AlbugimedAndroid"
 include(":app")
