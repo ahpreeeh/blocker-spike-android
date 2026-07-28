@@ -16,7 +16,7 @@ private val Context.blockPolicyStore by preferencesDataStore(name = "block_polic
 class BlockPolicyRepository(
     private val context: Context,
     private val timeSource: TimeSource = SystemTimeSource,
-) {
+) : UnlockPolicyGateway {
     private val defaultBlockedPackages = setOf("com.instagram.android")
 
     private object Keys {
@@ -33,7 +33,7 @@ class BlockPolicyRepository(
      * pour que le diagnostic l'affiche et que l'utilisateur ne soit jamais
      * enfermé dehors sans recours (protocole §5).
      */
-    val policy: Flow<PolicyState> = context.blockPolicyStore.data
+    override val policy: Flow<PolicyState> = context.blockPolicyStore.data
         .map { prefs ->
             val allowedEntries = prefs[Keys.ALLOWED_UNTIL] ?: emptySet()
             val allowedUntil = allowedEntries.mapNotNull { entry ->
@@ -100,12 +100,68 @@ class BlockPolicyRepository(
         }
     }
 
-    suspend fun revokeAllowance(packageName: String): Boolean =
+    override suspend fun grantTemporaryAllowanceIfStillBlocked(
+        packageName: String,
+        durationMillis: Long,
+    ): Boolean {
+        val pkg = packageName.trim()
+        if (pkg.isEmpty() || durationMillis <= 0L) return false
+        val now = timeSource.nowMillis()
+        val until = if (Long.MAX_VALUE - now < durationMillis) Long.MAX_VALUE
+        else now + durationMillis
+        var granted = false
+
+        return try {
+            context.blockPolicyStore.edit { prefs ->
+                val allowedEntries = prefs[Keys.ALLOWED_UNTIL] ?: emptySet()
+                val allowedUntil = allowedEntries.mapNotNull { entry ->
+                    val parts = entry.split('|', limit = 2)
+                    if (parts.size != 2 || parts[0].isBlank()) return@mapNotNull null
+                    parts[1].toLongOrNull()?.let { parts[0] to it }
+                }.toMap()
+                if (allowedUntil.size != allowedEntries.size) return@edit
+
+                val current = PolicyState(
+                    blockedPackages = prefs[Keys.BLOCKED] ?: defaultBlockedPackages,
+                    allowedUntil = allowedUntil,
+                    failsafeOverride = prefs[Keys.FAILSAFE_OVERRIDE] ?: false,
+                    variantB = prefs[Keys.VARIANT_B] ?: false,
+                )
+                if (!current.shouldBlock(pkg, now)) return@edit
+
+                val others = allowedEntries.filterNot { it.startsWith("$pkg|") }
+                prefs[Keys.ALLOWED_UNTIL] = (others + "$pkg|$until").toSet()
+                granted = true
+            }
+            InterceptionLog.add(
+                InterceptionLog.TAG_POLICY,
+                if (granted) {
+                    "Autorisation conditionnelle accordee jusqu'a $until"
+                } else {
+                    "Autorisation abandonnee : politique modifiee pendant l'inference"
+                },
+                packageName = pkg,
+            )
+            granted
+        } catch (error: Exception) {
+            InterceptionLog.add(
+                InterceptionLog.TAG_ERROR,
+                "Ecriture conditionnelle impossible : ${error.javaClass.simpleName}",
+                packageName = pkg,
+            )
+            false
+        }
+    }
+
+    override suspend fun revokeTemporaryAllowance(packageName: String): Boolean =
         mutate("Autorisation temporaire révoquée", packageName) { prefs ->
             prefs[Keys.ALLOWED_UNTIL] = (prefs[Keys.ALLOWED_UNTIL] ?: emptySet())
                 .filterNot { it.startsWith("$packageName|") }
                 .toSet()
         }
+
+    suspend fun revokeAllowance(packageName: String): Boolean =
+        revokeTemporaryAllowance(packageName)
 
     /** Ne dépend ni du modèle ni du réseau (protocole §5). */
     suspend fun setFailsafeOverride(enabled: Boolean): Boolean =

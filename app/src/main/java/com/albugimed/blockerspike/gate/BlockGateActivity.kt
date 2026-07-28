@@ -19,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -32,17 +33,24 @@ import com.albugimed.blockerspike.inference.UnlockRequestResult
 import com.albugimed.blockerspike.inference.UnlockRequestStatus
 import com.albugimed.blockerspike.policy.PolicyState
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /** Neutral gate routing every temporary exception through the T3 validator. */
 class BlockGateActivity : ComponentActivity() {
+    private val blockedPackage = MutableStateFlow(UNKNOWN_PACKAGE)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val blockedPackage = intent.getStringExtra(EXTRA_PACKAGE) ?: "(package inconnu)"
+        blockedPackage.value = packageFrom(intent)
         GateLaunchTracker.markShown(intent.getStringExtra(EXTRA_LAUNCH_TOKEN))
         setContent {
             MaterialTheme {
-                GateScreen(blockedPackage = blockedPackage, onDone = { finish() })
+                val packageName by blockedPackage.collectAsStateWithLifecycle()
+                // Reset the form and cancel its coroutine if singleTop receives
+                // a different blocked package while this Activity is visible.
+                key(packageName) {
+                    GateScreen(blockedPackage = packageName, onDone = { finish() })
+                }
             }
         }
     }
@@ -50,12 +58,17 @@ class BlockGateActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        blockedPackage.value = packageFrom(intent)
         GateLaunchTracker.markShown(intent.getStringExtra(EXTRA_LAUNCH_TOKEN))
     }
 
     companion object {
         private const val EXTRA_PACKAGE = "blocked_package"
         private const val EXTRA_LAUNCH_TOKEN = "launch_token"
+        private const val UNKNOWN_PACKAGE = "(package inconnu)"
+
+        private fun packageFrom(intent: Intent): String =
+            intent.getStringExtra(EXTRA_PACKAGE) ?: UNKNOWN_PACKAGE
 
         fun intent(
             context: Context,
@@ -159,7 +172,7 @@ private fun RequestResult(result: UnlockRequestResult) {
     )
     if (result.generationDurationMillis != null) {
         Text(
-            "Mesures T3 : chargement ${result.loadDurationMillis} ms, " +
+            "Mesures T3 (${result.backend}) : chargement ${result.loadDurationMillis} ms, " +
                 "generation ${result.generationDurationMillis} ms, " +
                 "pic PSS ${result.peakPssKb?.div(1024)} Mo",
             style = MaterialTheme.typography.bodySmall,

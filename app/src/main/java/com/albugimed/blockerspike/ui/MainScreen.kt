@@ -274,7 +274,7 @@ fun MainScreen() {
                     )
                     if (localModelPath == null) {
                         Text(
-                            "Dossier attendu : ${ModelLocator.modelDirectories(context).first().path}",
+                            "Fichier attendu : ${ModelLocator.adbModelFile(context).path}",
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }

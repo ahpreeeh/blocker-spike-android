@@ -17,17 +17,19 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 data class InferenceResult(
     val rawText: String,
+    val backend: String,
     val loadDurationMillis: Long,
     val generationDurationMillis: Long,
-    val peakPssKb: Int,
+    val peakPssKb: Long,
 )
 
-fun interface LocalInferenceGateway {
+interface LocalInferenceGateway {
     suspend fun generate(prompt: String): Result<InferenceResult>
 }
 
 class InferenceClient(context: Context) : LocalInferenceGateway {
     private val appContext = context.applicationContext
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override suspend fun generate(prompt: String): Result<InferenceResult> {
         val model = ModelLocator.findModel(appContext).getOrElse { return Result.failure(it) }
@@ -43,6 +45,7 @@ class InferenceClient(context: Context) : LocalInferenceGateway {
         val requestId = nextRequestId.incrementAndGet()
         val cleanedUp = AtomicBoolean(false)
         var bound = false
+        var remoteMessenger: Messenger? = null
         lateinit var connection: ServiceConnection
 
         fun cleanup() {
@@ -51,9 +54,22 @@ class InferenceClient(context: Context) : LocalInferenceGateway {
             }
         }
 
-        fun finish(result: Result<InferenceResult>) {
-            cleanup()
+        fun scheduleCleanup(delayMillis: Long) {
+            mainHandler.postDelayed({ cleanup() }, delayMillis)
+        }
+
+        fun finish(result: Result<InferenceResult>, keepWarm: Boolean = false) {
+            if (keepWarm) scheduleCleanup(WARM_BINDING_MILLIS) else cleanup()
             if (continuation.isActive) continuation.resume(result)
+        }
+
+        fun cancelRemoteGeneration() {
+            val cancel = Message.obtain(null, InferenceProtocol.CANCEL_GENERATION).apply {
+                data = android.os.Bundle().apply {
+                    putLong(InferenceProtocol.KEY_REQUEST_ID, requestId)
+                }
+            }
+            runCatching { remoteMessenger?.send(cancel) }
         }
 
         val replyMessenger = Messenger(
@@ -73,14 +89,18 @@ class InferenceClient(context: Context) : LocalInferenceGateway {
                                     rawText = response.data
                                         .getString(InferenceProtocol.KEY_RAW_TEXT)
                                         .orEmpty(),
+                                    backend = response.data
+                                        .getString(InferenceProtocol.KEY_BACKEND)
+                                        .orEmpty(),
                                     loadDurationMillis = response.data
                                         .getLong(InferenceProtocol.KEY_LOAD_MILLIS),
                                     generationDurationMillis = response.data
                                         .getLong(InferenceProtocol.KEY_GENERATION_MILLIS),
                                     peakPssKb = response.data
-                                        .getInt(InferenceProtocol.KEY_PEAK_PSS_KB),
+                                        .getLong(InferenceProtocol.KEY_PEAK_PSS_KB),
                                 )
-                            )
+                            ),
+                            keepWarm = true,
                         )
                     }
                     true
@@ -94,6 +114,7 @@ class InferenceClient(context: Context) : LocalInferenceGateway {
                     finish(Result.failure(IllegalStateException("Service d'inference sans binder")))
                     return
                 }
+                remoteMessenger = Messenger(binder)
                 val request = Message.obtain(null, InferenceProtocol.REQUEST_GENERATION).apply {
                     replyTo = replyMessenger
                     data = android.os.Bundle().apply {
@@ -102,7 +123,7 @@ class InferenceClient(context: Context) : LocalInferenceGateway {
                         putString(InferenceProtocol.KEY_PROMPT, prompt)
                     }
                 }
-                runCatching { Messenger(binder).send(request) }
+                runCatching { remoteMessenger?.send(request) }
                     .onFailure { finish(Result.failure(it)) }
             }
 
@@ -115,7 +136,12 @@ class InferenceClient(context: Context) : LocalInferenceGateway {
             }
         }
 
-        continuation.invokeOnCancellation { cleanup() }
+        continuation.invokeOnCancellation {
+            cancelRemoteGeneration()
+            // Keep the binding briefly so the remote native call can observe
+            // cancellation before Android destroys the service process.
+            scheduleCleanup(CANCELLATION_GRACE_MILLIS)
+        }
         val intent = Intent(appContext, InferenceService::class.java)
         bound = runCatching {
             appContext.bindService(intent, connection, Context.BIND_AUTO_CREATE)
@@ -130,6 +156,8 @@ class InferenceClient(context: Context) : LocalInferenceGateway {
 
     private companion object {
         const val REQUEST_TIMEOUT_MILLIS = 120_000L
+        const val WARM_BINDING_MILLIS = 120_000L
+        const val CANCELLATION_GRACE_MILLIS = 5_000L
         val nextRequestId = AtomicLong(0L)
     }
 }

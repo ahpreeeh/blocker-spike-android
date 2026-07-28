@@ -10,7 +10,8 @@ object UnlockPromptBuilder {
         policy: PolicyState,
         nowMillis: Long,
     ): String {
-        val recentAllowanceCount = policy.allowedUntil.values.count { it <= nowMillis }
+        val activeAllowanceCount = policy.allowedUntil.values.count { it > nowMillis }
+        val expiredAllowanceCount = policy.allowedUntil.values.count { it <= nowMillis }
         val safeJustification = justification.trim().take(MAX_JUSTIFICATION_LENGTH)
         return """
             Tu decides une demande ponctuelle d'acces a une application bloquee.
@@ -20,7 +21,8 @@ object UnlockPromptBuilder {
             Contexte:
             - package: ${JSONObject.quote(packageName)}
             - heure_epoch_ms: $nowMillis
-            - autorisations_terminees_connues: $recentAllowanceCount
+            - autorisations_actives_connues: $activeAllowanceCount
+            - autorisations_terminees_connues: $expiredAllowanceCount
             - justification_utilisateur: ${JSONObject.quote(safeJustification)}
 
             Reponds uniquement avec un objet JSON sur une seule decision, sans markdown ni texte autour.

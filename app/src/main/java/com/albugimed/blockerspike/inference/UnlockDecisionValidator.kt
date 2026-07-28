@@ -1,8 +1,6 @@
 package com.albugimed.blockerspike.inference
 
 import com.albugimed.blockerspike.policy.PolicyState
-import org.json.JSONObject
-import org.json.JSONTokener
 
 enum class UnlockDisposition { ALLOW, DENY }
 
@@ -55,34 +53,28 @@ object UnlockDecisionValidator {
             return invalid("La sortie n'est pas un objet JSON pur")
         }
         val json = try {
-            val tokener = JSONTokener(text)
-            val parsed = tokener.nextValue()
-            if (parsed !is JSONObject || tokener.nextClean() != 0.toChar()) {
-                return invalid("La sortie contient du texte hors JSON")
-            }
-            parsed
+            StrictFlatJsonParser.parse(text)
         } catch (_: Exception) {
             return invalid("JSON invalide")
         }
 
-        if (json.keySet() != requiredKeys) {
+        if (json.keys != requiredKeys) {
             return invalid("Champs manquants ou non autorises")
         }
-        val decision = json.opt("decision") as? String
+        val decision = (json["decision"] as? StrictFlatJsonParser.StringValue)?.value
             ?: return invalid("decision doit etre une chaine")
-        val reason = json.opt("reason") as? String
+        val reason = (json["reason"] as? StrictFlatJsonParser.StringValue)?.value
             ?: return invalid("reason doit etre une chaine")
-        val confidence = json.opt("confidence") as? String
+        val confidence = (json["confidence"] as? StrictFlatJsonParser.StringValue)?.value
             ?: return invalid("confidence doit etre une chaine")
-        val durationValue = json.opt("duration_minutes")
-        if (durationValue !is Number ||
-            !durationValue.toDouble().isFinite() ||
-            durationValue.toDouble() != durationValue.toLong().toDouble() ||
-            durationValue.toLong() !in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()
-        ) {
+        val durationToken =
+            (json["duration_minutes"] as? StrictFlatJsonParser.NumberValue)?.token
+                ?: return invalid("duration_minutes doit etre un entier")
+        if (!STRICT_INTEGER.matches(durationToken)) {
             return invalid("duration_minutes doit etre un entier")
         }
-        val durationMinutes = durationValue.toInt()
+        val durationMinutes = durationToken.toIntOrNull()
+            ?: return invalid("duration_minutes doit etre un entier")
         if (reason.isBlank() || reason.length > MAX_REASON_LENGTH) {
             return invalid("reason doit contenir 1 a $MAX_REASON_LENGTH caracteres")
         }
@@ -131,4 +123,5 @@ object UnlockDecisionValidator {
 
     private const val MAX_DURATION_MINUTES = 30
     private const val MAX_REASON_LENGTH = 240
+    private val STRICT_INTEGER = Regex("-?(0|[1-9][0-9]*)")
 }

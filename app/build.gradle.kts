@@ -14,6 +14,15 @@ val permanentSigning = Properties().apply {
 }
 val permanentCertificateSha256 =
     permanentSigning.getProperty("certificateSha256", "UNCONFIGURED")
+val permanentStoreFile = permanentSigning.getProperty("storeFile")
+    ?.let { rootProject.file(it) }
+val permanentSigningReady =
+    permanentSigningFile.isFile &&
+        permanentStoreFile?.isFile == true &&
+        permanentSigning.getProperty("storePassword").isNullOrBlank().not() &&
+        permanentSigning.getProperty("keyAlias").isNullOrBlank().not() &&
+        permanentSigning.getProperty("keyPassword").isNullOrBlank().not() &&
+        permanentCertificateSha256 != "UNCONFIGURED"
 
 android {
     // Le namespace du code peut evoluer apres la migration. L'applicationId
@@ -46,8 +55,8 @@ android {
         create("permanent") {
             dimension = "identity"
             applicationId = "com.albugimed.app"
-            versionCode = 3
-            versionName = "0.1.2-backup-enabled"
+            versionCode = 4
+            versionName = "0.2.0-t3-v1"
             manifestPlaceholders["deviceAdminReceiverClass"] =
                 "com.albugimed.app.admin.AlbugimedDeviceAdminReceiver"
             manifestPlaceholders["applicationLabel"] = "Albugimed"
@@ -56,9 +65,9 @@ android {
     }
 
     signingConfigs {
-        if (permanentSigningFile.isFile) {
+        if (permanentSigningReady) {
             create("permanent") {
-                storeFile = rootProject.file(permanentSigning.getProperty("storeFile"))
+                storeFile = permanentStoreFile
                 storePassword = permanentSigning.getProperty("storePassword")
                 keyAlias = permanentSigning.getProperty("keyAlias")
                 keyPassword = permanentSigning.getProperty("keyPassword")
@@ -69,7 +78,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            if (permanentSigningFile.isFile) {
+            if (permanentSigningReady) {
                 signingConfig = signingConfigs.getByName("permanent")
             }
         }
@@ -94,20 +103,11 @@ androidComponents {
         // Ne jamais produire une V0 signee en debug ni une migration signee
         // avec la cle permanente.
         if ((identity == "permanent" && variant.buildType == "debug") ||
-            (identity == "migration" && variant.buildType == "release")
+            (identity == "migration" && variant.buildType == "release") ||
+            (identity == "permanent" && variant.buildType == "release" &&
+                !permanentSigningReady)
         ) {
             variant.enable = false
-        }
-    }
-}
-
-tasks.configureEach {
-    if (name == "assemblePermanentRelease" && !permanentSigningFile.isFile) {
-        doFirst {
-            error(
-                "Signature permanente absente. Executez d'abord " +
-                    "CREATE_ALBUGIMED_SIGNING_KEY.ps1."
-            )
         }
     }
 }
@@ -131,4 +131,5 @@ dependencies {
     implementation(libs.litert.lm.android)
     testImplementation(libs.junit)
     testImplementation(libs.json)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

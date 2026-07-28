@@ -122,6 +122,87 @@ class UnlockDecisionValidatorTest {
         )
     }
 
+    @Test
+    fun exactThirtyMinuteUpperBoundIsAccepted() {
+        val result = validate(
+            """{"decision":"allow","duration_minutes":30,"reason":"Besoin borne","confidence":"low"}"""
+        )
+
+        assertTrue(result.outputValid)
+        assertEquals(1_800_000L, result.grantDurationMillis)
+    }
+
+    @Test
+    fun stringDurationFailsClosed() {
+        assertInvalidDeny(
+            validate(
+                """{"decision":"allow","duration_minutes":"2","reason":"Test","confidence":"high"}"""
+            )
+        )
+    }
+
+    @Test
+    fun proseOrFreeTextFailsClosed() {
+        assertInvalidDeny(
+            validate(
+                """Decision: {"decision":"deny","duration_minutes":0,"reason":"Non","confidence":"high"}"""
+            )
+        )
+        assertInvalidDeny(validate("Autorise deux minutes"))
+    }
+
+    @Test
+    fun emptyOrOversizedReasonFailsClosed() {
+        assertInvalidDeny(
+            validate(
+                """{"decision":"deny","duration_minutes":0,"reason":" ","confidence":"high"}"""
+            )
+        )
+        val oversized = "x".repeat(241)
+        assertInvalidDeny(
+            validate(
+                """{"decision":"deny","duration_minutes":0,"reason":"$oversized","confidence":"high"}"""
+            )
+        )
+    }
+
+    @Test
+    fun permissiveJsonExtensionsFailClosed() {
+        val invalidOutputs = listOf(
+            "{'decision':'deny','duration_minutes':0,'reason':'Non','confidence':'high'}",
+            """{decision:"deny","duration_minutes":0,"reason":"Non","confidence":"high"}""",
+            """{"decision":"deny","duration_minutes":0,"reason":"Non","confidence":"high",}""",
+            """{"decision":"deny","decision":"allow","duration_minutes":0,"reason":"Non","confidence":"high"}""",
+            """{"decision":"deny","duration_minutes":00,"reason":"Non","confidence":"high"}""",
+        )
+
+        invalidOutputs.forEach { assertInvalidDeny(validate(it)) }
+    }
+
+    @Test
+    fun strictJsonAcceptsReorderedKeysAndEscapes() {
+        val result = validate(
+            """{"reason":"Besoin \"ponctuel\"","confidence":"low","duration_minutes":2,"decision":"allow"}"""
+        )
+
+        assertTrue(result.outputValid)
+        assertEquals(UnlockDisposition.ALLOW, result.disposition)
+        assertEquals("Besoin \"ponctuel\"", result.modelReason)
+    }
+
+    @Test
+    fun unhealthyStorageFailsClosed() {
+        val result = UnlockDecisionValidator.validate(
+            rawOutput =
+                """{"decision":"allow","duration_minutes":2,"reason":"Test","confidence":"high"}""",
+            packageName = packageName,
+            policy = blockedPolicy.copy(storageHealthy = false),
+            nowMillis = 1_000L,
+        )
+
+        assertInvalidDeny(result)
+    }
+
     private fun validate(raw: String): DecisionValidationResult =
         UnlockDecisionValidator.validate(
             rawOutput = raw,

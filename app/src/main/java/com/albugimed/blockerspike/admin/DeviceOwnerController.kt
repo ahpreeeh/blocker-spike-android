@@ -38,6 +38,9 @@ class DeviceOwnerController(context: Context) {
     private val _runtime = MutableStateFlow(readRuntime())
     val runtime: StateFlow<DeviceOwnerRuntimeState> = _runtime.asStateFlow()
 
+    /** A temporary allowance is safe only if its expiry can wake the device on time. */
+    fun canEnforceExactExpiry(): Boolean = alarmManager.canScheduleExactAlarms()
+
     suspend fun reconcile(policy: PolicyState, nowMillis: Long = System.currentTimeMillis()) {
         reconcileMutex.withLock {
             val adminActive = dpm.isAdminActive(admin)
@@ -78,10 +81,17 @@ class DeviceOwnerController(context: Context) {
                 false
             }
 
+            // A non-exact fallback can outlive a short allowance by tens of
+            // minutes. Ignore all allowances until Android grants exact alarms.
+            val enforceablePolicy = if (exactAlarmsAllowed) {
+                policy
+            } else {
+                policy.copy(allowedUntil = emptyMap())
+            }
             val desired = desiredSuspensions(
                 previouslyManaged = previouslyManaged,
                 currentTargets = currentTargets,
-                policy = policy,
+                policy = enforceablePolicy,
                 nowMillis = nowMillis,
             )
             val actualSuspended = linkedSetOf<String>()
@@ -112,7 +122,7 @@ class DeviceOwnerController(context: Context) {
             preferences.edit()
                 .putStringSet(KEY_MANAGED_PACKAGES, nextManaged)
                 .apply()
-            scheduleNextAllowanceExpiry(policy, nowMillis)
+            scheduleNextAllowanceExpiry(enforceablePolicy, nowMillis)
             _runtime.value = DeviceOwnerRuntimeState(
                 adminActive = adminActive,
                 deviceOwner = true,
@@ -130,6 +140,19 @@ class DeviceOwnerController(context: Context) {
         cancelAllowanceAlarm()
         preferences.edit().remove(KEY_MANAGED_PACKAGES).apply()
         _runtime.value = readRuntime()
+    }
+
+    /** Applies the current policy synchronously and verifies Android's state. */
+    suspend fun reconcileAndConfirmSuspension(
+        policy: PolicyState,
+        packageName: String,
+        expectedSuspended: Boolean,
+    ): Boolean {
+        reconcile(policy)
+        if (!dpm.isDeviceOwnerApp(appContext.packageName)) return false
+        return runCatching {
+            dpm.isPackageSuspended(admin, packageName) == expectedSuspended
+        }.getOrDefault(false)
     }
 
     /**

@@ -6,12 +6,14 @@ import android.app.NotificationManager
 import android.content.Context
 import com.albugimed.blockerspike.admin.DeviceOwnerController
 import com.albugimed.blockerspike.inference.InferenceClient
+import com.albugimed.blockerspike.inference.PolicyEnforcer
 import com.albugimed.blockerspike.inference.UnlockRequestCoordinator
 import com.albugimed.blockerspike.policy.BlockPolicyRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class App : Application() {
@@ -60,6 +62,14 @@ object Graph {
         unlockRequestCoordinator = UnlockRequestCoordinator(
             repository = policyRepository,
             inference = InferenceClient(context.applicationContext),
+            exactExpiryAvailable = deviceOwnerController::canEnforceExactExpiry,
+            policyEnforcer = PolicyEnforcer { packageName, expectedSuspended ->
+                deviceOwnerController.reconcileAndConfirmSuspension(
+                    policy = policyRepository.policy.first(),
+                    packageName = packageName,
+                    expectedSuspended = expectedSuspended,
+                )
+            },
         )
     }
 

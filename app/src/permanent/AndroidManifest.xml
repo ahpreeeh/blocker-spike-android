@@ -8,9 +8,8 @@
         tools:node="remove" />
 
     <application>
-        <activity
-            android:name="com.albugimed.blockerspike.gate.BlockGateActivity"
-            tools:node="remove" />
+        <!-- The permanent Device Owner still needs the neutral T3 request
+             screen. Only the legacy accessibility interception is removed. -->
         <service
             android:name="com.albugimed.blockerspike.service.BlockerAccessibilityService"
             tools:node="remove" />

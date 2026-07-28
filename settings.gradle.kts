@@ -16,3 +16,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "AlbugimedAndroid"
 include(":app")
+// Reproductible T3 harness; not shipped in the Android product.
+include(":pc-harness")
