@@ -77,7 +77,7 @@ internal object StrictFlatJsonParser {
                 'u' -> {
                     require(index + 4 <= source.length) { "Incomplete Unicode escape" }
                     val token = source.substring(index, index + 4)
-                    require(token.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' }) {
+                    require(token.all { it in '0'..'9' || it.lowercaseChar() in 'a'..'f' }) {
                         "Invalid Unicode escape"
                     }
                     index += 4
@@ -94,23 +94,23 @@ internal object StrictFlatJsonParser {
             when (val first = source[index]) {
                 '0' -> {
                     index++
-                    require(peek()?.isDigit() != true) { "Leading zero" }
+                    require(!peek().isAsciiDigit()) { "Leading zero" }
                 }
                 in '1'..'9' -> {
                     index++
-                    while (peek()?.isDigit() == true) index++
+                    while (peek().isAsciiDigit()) index++
                 }
                 else -> error("Invalid JSON number: $first")
             }
             if (consumeIf('.')) {
-                require(peek()?.isDigit() == true) { "Missing fraction digits" }
-                while (peek()?.isDigit() == true) index++
+                require(peek().isAsciiDigit()) { "Missing fraction digits" }
+                while (peek().isAsciiDigit()) index++
             }
             if (peek() == 'e' || peek() == 'E') {
                 index++
                 if (peek() == '+' || peek() == '-') index++
-                require(peek()?.isDigit() == true) { "Missing exponent digits" }
-                while (peek()?.isDigit() == true) index++
+                require(peek().isAsciiDigit()) { "Missing exponent digits" }
+                while (peek().isAsciiDigit()) index++
             }
             return source.substring(start, index)
         }
@@ -125,6 +125,8 @@ internal object StrictFlatJsonParser {
         }
 
         private fun peek(): Char? = source.getOrNull(index)
+
+        private fun Char?.isAsciiDigit(): Boolean = this != null && this in '0'..'9'
 
         private fun consumeIf(expected: Char): Boolean {
             if (peek() != expected) return false

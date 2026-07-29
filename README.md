@@ -6,6 +6,13 @@ package au premier plan via `AccessibilityService`, état local déterministe (D
 interruption T2-A (notification) ou T2-B (écran immédiat), autorisations temporaires
 avec expiration, override de panne, diagnostic et journal minimal.
 
+## Branche canonique T3
+
+Depuis le 29 juillet 2026, `feature/albugimed-v0` est la source canonique pour
+l'identité Device Owner permanente et l'inférence locale LiteRT-LM. La branche
+`agent/t3-v1-inference` est un spike historique déjà consolidé sélectivement :
+ne pas la fusionner ni la cherry-pick en bloc dans l'application permanente.
+
 ## Ouvrir et compiler
 
 1. Android Studio (Narwhal ou plus récent, JDK 17) → **File → Open** → ce dossier.

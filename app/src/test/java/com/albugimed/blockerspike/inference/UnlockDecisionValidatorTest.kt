@@ -174,6 +174,7 @@ class UnlockDecisionValidatorTest {
             """{"decision":"deny","duration_minutes":0,"reason":"Non","confidence":"high",}""",
             """{"decision":"deny","decision":"allow","duration_minutes":0,"reason":"Non","confidence":"high"}""",
             """{"decision":"deny","duration_minutes":00,"reason":"Non","confidence":"high"}""",
+            """{"\u٠٠٦٤ecision":"deny","duration_minutes":0,"reason":"Non","confidence":"high"}""",
         )
 
         invalidOutputs.forEach { assertInvalidDeny(validate(it)) }
