@@ -14,6 +14,16 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Le délai d'une autorisation temporaire fait partie de la politique coercitive. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!--
+         Ajoutée sciemment le 31/07/2026, contrat §10. L'application n'avait
+         aucune permission réseau : l'exfiltration était impossible par
+         construction, et cette garantie est perdue. Elle est remplacée par
+         quatre garanties de conception, dont la première est vérifiable ici
+         même : toute la surface réseau tient dans `sync/SyncTransport.kt`,
+         deux points de terminaison, un seul hôte, aucune bibliothèque HTTP.
+         Aucune donnée de coercition ne traverse ce contrat (P4-08-A1).
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:name=".App"
         android:label="${applicationLabel}"
@@ -38,6 +48,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".study.StudyQueueActivity"
+            android:exported="false" />
+        <activity
+            android:name=".study.DeclareActivity"
+            android:exported="false" />
 
         <!-- N'imite jamais l'application bloquée : écran neutre, hors des récents. -->
         <activity

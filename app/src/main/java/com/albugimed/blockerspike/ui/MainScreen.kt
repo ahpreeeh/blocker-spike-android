@@ -44,6 +44,7 @@ import com.albugimed.blockerspike.gate.BlockGateActivity
 import com.albugimed.blockerspike.inference.ModelLocator
 import com.albugimed.blockerspike.log.InterceptionLog
 import com.albugimed.blockerspike.policy.PolicyState
+import com.albugimed.blockerspike.study.StudyQueueActivity
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -139,6 +140,19 @@ fun MainScreen() {
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            item {
+                Section("Études") {
+                    Button(
+                        onClick = {
+                            context.startActivity(StudyQueueActivity.intent(context))
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Ouvrir la file")
+                    }
+                }
+            }
+
             item {
                 Section("Suspension systeme") {
                     Text(
@@ -384,7 +398,7 @@ fun MainScreen() {
 }
 
 @Composable
-private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) {
+internal fun Section(title: String, content: @Composable ColumnScope.() -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
@@ -399,7 +413,7 @@ private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) 
 }
 
 @Composable
-private fun DiagnosticRow(label: String, ok: Boolean, onOpen: () -> Unit) {
+internal fun DiagnosticRow(label: String, ok: Boolean, onOpen: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -452,7 +466,7 @@ private fun BlockedPackageRow(
 }
 
 @Composable
-private fun ToggleRow(
+internal fun ToggleRow(
     title: String,
     subtitle: String,
     checked: Boolean,

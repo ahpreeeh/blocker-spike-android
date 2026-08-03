@@ -9,6 +9,11 @@ import com.albugimed.blockerspike.inference.InferenceClient
 import com.albugimed.blockerspike.inference.PolicyEnforcer
 import com.albugimed.blockerspike.inference.UnlockRequestCoordinator
 import com.albugimed.blockerspike.policy.BlockPolicyRepository
+import com.albugimed.blockerspike.sync.HttpSyncTransport
+import com.albugimed.blockerspike.sync.KeystoreCredentialStore
+import com.albugimed.blockerspike.sync.QueueCacheRepository
+import com.albugimed.blockerspike.sync.StudyOutboxRepository
+import com.albugimed.blockerspike.sync.SyncEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -51,6 +56,22 @@ object Graph {
         private set
     lateinit var unlockRequestCoordinator: UnlockRequestCoordinator
         private set
+
+    /**
+     * Côté études. Câblé ici pour la même raison que le reste : DataStore
+     * n'accepte qu'une instance par fichier, et `Graph.init` n'est appelé
+     * que dans le processus principal — jamais dans `:inference`.
+     *
+     * Ces trois objets ne connaissent rien de la coercition, et la
+     * coercition ne les connaît pas. Le graphe est le seul endroit où les
+     * deux moitiés se croisent, et elles ne s'y touchent pas.
+     */
+    lateinit var studyOutbox: StudyOutboxRepository
+        private set
+    lateinit var queueCache: QueueCacheRepository
+        private set
+    lateinit var syncEngine: SyncEngine
+        private set
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var reconciliationStarted = false
 
@@ -70,6 +91,15 @@ object Graph {
                     expectedSuspended = expectedSuspended,
                 )
             },
+        )
+
+        studyOutbox = StudyOutboxRepository(context.applicationContext)
+        queueCache = QueueCacheRepository(context.applicationContext)
+        syncEngine = SyncEngine(
+            outbox = studyOutbox,
+            queueCache = queueCache,
+            credentialStore = KeystoreCredentialStore(context.applicationContext),
+            transport = HttpSyncTransport(),
         )
     }
 
