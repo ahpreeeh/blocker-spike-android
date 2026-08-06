@@ -35,6 +35,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.albugimed.blockerspike.Graph
+import com.albugimed.blockerspike.reader.ReaderActivity
+import com.albugimed.blockerspike.reader.ReadingPosition
 import com.albugimed.blockerspike.sync.EnrolOutcome
 import com.albugimed.blockerspike.sync.QueueItem
 import com.albugimed.blockerspike.sync.SyncState
@@ -52,6 +55,8 @@ class StudyQueueActivity : ComponentActivity() {
         val repository = StudyDependencies.repository(applicationContext)
         setContent {
             MaterialTheme {
+                val positions by Graph.readingPositions.positions
+                    .collectAsStateWithLifecycle(initialValue = emptyMap())
                 StudyQueueScreen(
                     repository = repository,
                     onDeclare = { queueItem ->
@@ -59,6 +64,19 @@ class StudyQueueActivity : ComponentActivity() {
                     },
                     onDeclareFree = {
                         startActivity(DeclareActivity.freeIntent(this))
+                    },
+                    positions = positions,
+                    onResume = { queueItem ->
+                        queueItem.resource?.let { resource ->
+                            startActivity(
+                                ReaderActivity.intent(
+                                    context = this,
+                                    resourceId = resource.resourceId,
+                                    resourceLabel = resource.label,
+                                    stepId = queueItem.stepId,
+                                ),
+                            )
+                        }
                     },
                 )
             }
@@ -75,6 +93,8 @@ internal fun StudyQueueScreen(
     repository: StudyRepository,
     onDeclare: (QueueItem) -> Unit,
     onDeclareFree: () -> Unit,
+    positions: Map<String, ReadingPosition> = emptyMap(),
+    onResume: (QueueItem) -> Unit = {},
 ) {
     val state by repository.queueState.collectAsStateWithLifecycle(
         initialValue = StudyQueueState(),
@@ -160,7 +180,12 @@ internal fun StudyQueueScreen(
                 }
             } else {
                 items(items = state.items, key = QueueItem::stepId) { item ->
-                    QueueItemCard(item = item, onClick = { onDeclare(item) })
+                    QueueItemCard(
+                        item = item,
+                        onClick = { onDeclare(item) },
+                        position = item.resource?.let { positions[it.resourceId] },
+                        onResume = { onResume(item) },
+                    )
                 }
             }
         }
@@ -325,7 +350,12 @@ private fun QueueStatusCard(
 }
 
 @Composable
-private fun QueueItemCard(item: QueueItem, onClick: () -> Unit) {
+private fun QueueItemCard(
+    item: QueueItem,
+    onClick: () -> Unit,
+    position: ReadingPosition? = null,
+    onResume: () -> Unit = {},
+) {
     Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
@@ -349,9 +379,28 @@ private fun QueueItemCard(item: QueueItem, onClick: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+            // V2.2 : le mot change seulement quand la promesse peut etre
+            // tenue. Sans document rattache, rien ne ramene a la page, et
+            // afficher "Reprendre" serait mentir.
+            if (position != null) {
+                OutlinedButton(onClick = onResume, modifier = Modifier.fillMaxWidth()) {
+                    Text(resumeButtonLabel(position))
+                }
+            }
         }
     }
 }
+
+/**
+ * Le libelle du bouton de reprise. Il nomme la page, pas seulement l'action :
+ * "Reprendre" seul obligerait a ouvrir pour savoir ou l'on atterrit.
+ */
+internal fun resumeButtonLabel(position: ReadingPosition): String =
+    if (position.pageCount > 0) {
+        "Reprendre page ${position.page} / ${position.pageCount}"
+    } else {
+        "Reprendre page ${position.page}"
+    }
 
 internal fun cacheFreshnessLabel(cachedAtMillis: Long?): String {
     if (cachedAtMillis == null) return "File à jour du —"

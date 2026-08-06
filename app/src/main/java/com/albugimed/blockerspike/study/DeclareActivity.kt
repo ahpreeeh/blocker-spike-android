@@ -37,12 +37,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.albugimed.blockerspike.Graph
 import com.albugimed.blockerspike.sync.AcademicNodeKind
 import com.albugimed.blockerspike.sync.AcademicNodeRef
 import com.albugimed.blockerspike.sync.ActivityKind
 import com.albugimed.blockerspike.sync.Difficulty
 import com.albugimed.blockerspike.sync.QueueItem
 import com.albugimed.blockerspike.ui.Section
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.time.OffsetDateTime
 
@@ -52,6 +56,30 @@ class DeclareActivity : ComponentActivity() {
         val stepId = intent.getStringExtra(EXTRA_STEP_ID)
         val freeDeclaration = intent.getBooleanExtra(EXTRA_FREE_DECLARATION, false)
         val repository = StudyDependencies.repository(applicationContext)
+
+        // V2.2 - venu du lecteur interne. La plage est PROPOSEE, pas imposee :
+        // la position reste un fait declare (amendement §3).
+        val readerResourceId = intent.getStringExtra(EXTRA_READER_RESOURCE_ID)
+        val prefillFrom = intent.getIntExtra(EXTRA_PAGES_FROM, 0).takeIf { it >= 1 }
+        val prefillTo = intent.getIntExtra(EXTRA_PAGES_TO, 0).takeIf { it >= 1 }
+        val prefill = if (prefillFrom != null && prefillTo != null) {
+            PageRangePrefill(prefillFrom, prefillTo)
+        } else {
+            null
+        }
+        val onSaved: () -> Unit = {
+            if (readerResourceId != null && prefillTo != null) {
+                // Le compte repart de la page suivante. Sans cela, la
+                // prochaine seance reproposerait des pages deja declarees.
+                readerScope.launch {
+                    Graph.readingPositions.markDeclaredThrough(
+                        resourceId = readerResourceId,
+                        page = prefillTo,
+                        nowMillis = System.currentTimeMillis(),
+                    )
+                }
+            }
+        }
         setContent {
             MaterialTheme {
                 val queue by repository.queueState.collectAsStateWithLifecycle(
@@ -75,6 +103,8 @@ class DeclareActivity : ComponentActivity() {
                         repository = repository,
                         onOpenResource = ::openResource,
                         onDone = ::finish,
+                        prefill = prefill,
+                        onSaved = onSaved,
                     )
                 }
             }
@@ -93,6 +123,15 @@ class DeclareActivity : ComponentActivity() {
     companion object {
         private const val EXTRA_STEP_ID = "study_step_id"
         private const val EXTRA_FREE_DECLARATION = "study_free_declaration"
+        private const val EXTRA_READER_RESOURCE_ID = "study_reader_resource_id"
+        private const val EXTRA_PAGES_FROM = "study_pages_from"
+        private const val EXTRA_PAGES_TO = "study_pages_to"
+
+        /**
+         * Portee applicative : la mise a jour du signet ne doit pas etre
+         * annulee quand l'ecran se ferme juste apres l'enregistrement.
+         */
+        private val readerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
         fun intent(context: Context, stepId: String): Intent =
             Intent(context, DeclareActivity::class.java)
@@ -101,8 +140,23 @@ class DeclareActivity : ComponentActivity() {
         fun freeIntent(context: Context): Intent =
             Intent(context, DeclareActivity::class.java)
                 .putExtra(EXTRA_FREE_DECLARATION, true)
+
+        /** Declaration ouverte depuis le lecteur, plage de pages proposee. */
+        fun readerIntent(
+            context: Context,
+            stepId: String,
+            resourceId: String,
+            pagesFrom: Int,
+            pagesTo: Int,
+        ): Intent = intent(context, stepId)
+            .putExtra(EXTRA_READER_RESOURCE_ID, resourceId)
+            .putExtra(EXTRA_PAGES_FROM, pagesFrom)
+            .putExtra(EXTRA_PAGES_TO, pagesTo)
     }
 }
+
+/** Plage proposee par le lecteur. Modifiable dans le formulaire. */
+data class PageRangePrefill(val from: Int, val to: Int)
 
 @Composable
 private fun MissingStepScreen(onClose: () -> Unit) {
@@ -128,11 +182,13 @@ internal fun DeclareScreen(
     repository: StudyRepository,
     onOpenResource: (String) -> String?,
     onDone: () -> Unit,
+    prefill: PageRangePrefill? = null,
+    onSaved: () -> Unit = {},
 ) {
     var durationMinutes by rememberSaveable { mutableStateOf("") }
     var unitTypeName by rememberSaveable { mutableStateOf(WorkUnitType.PAGES.name) }
-    var pagesFrom by rememberSaveable { mutableStateOf("") }
-    var pagesTo by rememberSaveable { mutableStateOf("") }
+    var pagesFrom by rememberSaveable { mutableStateOf(prefill?.from?.toString() ?: "") }
+    var pagesTo by rememberSaveable { mutableStateOf(prefill?.to?.toString() ?: "") }
     var annaleLabel by rememberSaveable { mutableStateOf("") }
     var cardsCount by rememberSaveable { mutableStateOf("") }
     var freeLabel by rememberSaveable { mutableStateOf("") }
@@ -381,6 +437,7 @@ internal fun DeclareScreen(
                                     repository.saveActivityLocally(result.declaration)
                                 }.onSuccess {
                                     saved = true
+                                    onSaved()
                                     scope.launch {
                                         runCatching { repository.syncAfterLocalSave() }
                                     }

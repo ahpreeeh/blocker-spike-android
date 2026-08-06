@@ -76,6 +76,11 @@
         <activity
             android:name=".study.DeclareActivity"
             android:exported="false" />
+        <!-- Lecteur interne V2.2. Non exporte : il n'existe que pour les
+             ressources de la file, jamais comme visionneuse generale. -->
+        <activity
+            android:name=".reader.ReaderActivity"
+            android:exported="false" />
 
         <!-- N'imite jamais l'application bloquée : écran neutre, hors des récents. -->
         <activity

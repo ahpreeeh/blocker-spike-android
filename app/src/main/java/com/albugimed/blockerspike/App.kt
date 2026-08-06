@@ -12,6 +12,7 @@ import com.albugimed.blockerspike.inference.InferenceClient
 import com.albugimed.blockerspike.inference.PolicyEnforcer
 import com.albugimed.blockerspike.inference.UnlockRequestCoordinator
 import com.albugimed.blockerspike.policy.BlockPolicyRepository
+import com.albugimed.blockerspike.reader.ReadingPositionRepository
 import com.albugimed.blockerspike.sync.AgendaCacheRepository
 import com.albugimed.blockerspike.sync.HttpSyncTransport
 import com.albugimed.blockerspike.sync.KeystoreCredentialStore
@@ -96,7 +97,20 @@ object Graph {
         private set
     lateinit var captureTransport: SyncTransport
         private set
-    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * Positions de lecture — V2.2. Cinquieme magasin, et le seul dont le
+     * contenu ne part JAMAIS sur le reseau : le lecteur connait la page, le
+     * serveur ne l'apprend qu'au moment ou elle est declaree.
+     */
+    lateinit var readingPositions: ReadingPositionRepository
+        private set
+
+    /**
+     * Portee de l'application. Publique depuis V2.2 : poser un signet ne doit
+     * pas etre annule parce que l'ecran de lecture se ferme.
+     */
+    val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var reconciliationStarted = false
 
     @Synchronized
@@ -123,6 +137,7 @@ object Graph {
         )
         captureCredentials = KeystoreCredentialStore(context.applicationContext)
         captureTransport = HttpSyncTransport()
+        readingPositions = ReadingPositionRepository(context.applicationContext)
         queueCache = QueueCacheRepository(context.applicationContext)
         agendaCache = AgendaCacheRepository(context.applicationContext)
         blockGuideRepository = BlockGuideRepository(context.applicationContext)
