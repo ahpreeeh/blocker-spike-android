@@ -59,6 +59,8 @@ class SyncStudyRepository(
             cachedAtMillis = cached.fetchedAtMillis,
             items = cached.snapshot.items,
             skippedQueueItems = cached.snapshot.skipped,
+            nodes = cached.snapshot.nodes,
+            skippedQueueNodes = cached.snapshot.skippedNodes,
             pendingCount = outbox.pendingCount,
             rejectedEvents = outbox.dead,
             unreadableCount = outbox.unreadable,

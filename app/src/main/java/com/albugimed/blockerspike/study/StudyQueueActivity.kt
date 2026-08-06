@@ -57,6 +57,9 @@ class StudyQueueActivity : ComponentActivity() {
                     onDeclare = { queueItem ->
                         startActivity(DeclareActivity.intent(this, queueItem.stepId))
                     },
+                    onDeclareFree = {
+                        startActivity(DeclareActivity.freeIntent(this))
+                    },
                 )
             }
         }
@@ -71,6 +74,7 @@ class StudyQueueActivity : ComponentActivity() {
 internal fun StudyQueueScreen(
     repository: StudyRepository,
     onDeclare: (QueueItem) -> Unit,
+    onDeclareFree: () -> Unit,
 ) {
     val state by repository.queueState.collectAsStateWithLifecycle(
         initialValue = StudyQueueState(),
@@ -131,6 +135,14 @@ internal fun StudyQueueScreen(
             operationError?.let { error ->
                 item {
                     Text(error, color = MaterialTheme.colorScheme.error)
+                }
+            }
+            item {
+                OutlinedButton(
+                    onClick = onDeclareFree,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Déclarer autre chose")
                 }
             }
             if (state.items.isEmpty()) {
@@ -256,6 +268,12 @@ private fun QueueStatusCard(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+            if (state.skippedQueueNodes > 0) {
+                Text(
+                    "${state.skippedQueueNodes} matière(s) ou chapitre(s) reçu(s) illisible(s)",
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
             if (!state.outboxStorageHealthy) {
                 Text(
                     "État de la file d'envoi illisible.",
@@ -319,6 +337,12 @@ private fun QueueItemCard(item: QueueItem, onClick: () -> Unit) {
                 "Fraîcheur : ${item.signals.freshnessDays?.let { "$it j" } ?: "—"}",
                 style = MaterialTheme.typography.bodySmall,
             )
+            item.signals.lastWork?.let { lastWork ->
+                Text(
+                    "Dernier travail : ${lastWorkDisplayLabel(lastWork, item.resource)}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
         }
     }
 }

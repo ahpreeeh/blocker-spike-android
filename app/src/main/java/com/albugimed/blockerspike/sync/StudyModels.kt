@@ -37,6 +37,18 @@ enum class Difficulty(val wireName: String) {
     }
 }
 
+enum class ActivityKind(val wireName: String) {
+    FIRST_STUDY("first_study"),
+    REVISION("revision"),
+    TRAINING("training"),
+    READING("reading"),
+    ;
+
+    companion object {
+        fun fromWire(value: String): ActivityKind? = entries.firstOrNull { it.wireName == value }
+    }
+}
+
 /** Ce qui a été fait, dans l'unité qui a du sens pour l'activité déclarée. */
 sealed interface ActivityUnit {
     data class Pages(val from: Int, val to: Int) : ActivityUnit
@@ -54,6 +66,7 @@ data class StudyEvent(
     val nodeId: String? = null,
     val stepId: String? = null,
     val resourceId: String? = null,
+    val activityKind: ActivityKind? = null,
     val durationMinutes: Int? = null,
     val unit: ActivityUnit? = null,
     val difficulty: Difficulty? = null,

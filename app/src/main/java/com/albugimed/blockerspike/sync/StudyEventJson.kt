@@ -22,6 +22,7 @@ object StudyEventJson {
         event.nodeId?.let { payload.put("node_id", it) }
         event.stepId?.let { payload.put("step_id", it) }
         event.resourceId?.let { payload.put("resource_id", it) }
+        event.activityKind?.let { payload.put("activity_kind", it.wireName) }
         event.durationMinutes?.let { payload.put("duration_minutes", it) }
         event.difficulty?.let { payload.put("difficulty", it.wireName) }
         event.note?.let { payload.put("note", it) }
@@ -56,6 +57,7 @@ object StudyEventJson {
             nodeId = payload.optStringOrNull("node_id"),
             stepId = payload.optStringOrNull("step_id"),
             resourceId = payload.optStringOrNull("resource_id"),
+            activityKind = payload.optStringOrNull("activity_kind")?.let(ActivityKind::fromWire),
             durationMinutes = if (payload.has("duration_minutes")) {
                 payload.optInt("duration_minutes")
             } else {

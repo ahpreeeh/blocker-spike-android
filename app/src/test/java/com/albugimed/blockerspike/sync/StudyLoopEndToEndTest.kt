@@ -4,6 +4,7 @@ import com.albugimed.blockerspike.study.DeclarationBuildResult
 import com.albugimed.blockerspike.study.DeclareFormState
 import com.albugimed.blockerspike.study.WorkUnitType
 import com.albugimed.blockerspike.study.buildActivityDeclaration
+import com.albugimed.blockerspike.study.buildFreeActivityDeclaration
 import com.albugimed.blockerspike.study.toStudyEvent
 import java.time.OffsetDateTime
 import kotlinx.coroutines.test.runTest
@@ -144,8 +145,26 @@ class StudyLoopEndToEndTest {
         kind = "revision",
         subject = NodeRef("nod_cardio", "Cardiologie"),
         chapter = NodeRef("nod_ic", "Insuffisance cardiaque"),
-        resource = null,
+        resource = ResourceRef(
+            resourceId = "res_college_cardio",
+            label = "Collège de cardiologie",
+            type = "pdf_drive",
+            openUri = "https://drive.example/cardio",
+        ),
         signals = QueueSignals(null, null, null, null),
+    )
+
+    private val matiere = AcademicNodeRef(
+        nodeId = "nod_cardio",
+        label = "Cardiologie",
+        kind = AcademicNodeKind.SUBJECT,
+        parentId = null,
+    )
+    private val chapitre = AcademicNodeRef(
+        nodeId = "nod_ic",
+        label = "Insuffisance cardiaque",
+        kind = AcademicNodeKind.CHAPTER,
+        parentId = matiere.nodeId,
     )
 
     /** La déclaration de la vérification §6 : 35 minutes, pages 47 à 62, difficile. */
@@ -167,6 +186,25 @@ class StudyLoopEndToEndTest {
         // `event_id` frappé ici, à la saisie — pas à l'envoi.
         val event = (built as DeclarationBuildResult.Valid).declaration
             .toStudyEvent("evt_01JZR4A9M2XK7QRSTVWXYZ01$suffixe")
+        outbox.enqueue(event)
+        return event
+    }
+
+    private fun declarerHorsFile(suffixe: String): StudyEvent {
+        val built = buildFreeActivityDeclaration(
+            chapter = chapitre,
+            activityKind = ActivityKind.TRAINING,
+            form = DeclareFormState(
+                durationMinutes = "45",
+                unitType = WorkUnitType.ANNALE,
+                annaleLabel = "ECN 2019 — dossier 3",
+                difficulty = Difficulty.OK,
+            ),
+            occurredAt = OffsetDateTime.parse("2026-07-31T17:00:00+02:00"),
+        )
+        assertTrue(built is DeclarationBuildResult.Valid)
+        val event = (built as DeclarationBuildResult.Valid).declaration
+            .toStudyEvent("evt_01JZR4A9M2XK7QRSTVWXYZ02$suffixe")
         outbox.enqueue(event)
         return event
     }
@@ -205,6 +243,26 @@ class StudyLoopEndToEndTest {
         assertEquals(ActivityUnit.Pages(47, 62), recu.unit)
         assertEquals(Difficulty.HARD, recu.difficulty)
         assertEquals("2026-07-31T15:42:00+02:00", recu.occurredAt)
+        assertEquals("res_college_cardio", recu.resourceId)
+        assertEquals(null, recu.activityKind)
+    }
+
+    @Test
+    fun uneDeclarationHorsFileSurvitHorsLigneSansFausseEtape() = runTest {
+        server.offline = true
+        val event = declarerHorsFile("34")
+
+        assertTrue(engine.sync() is SyncOutcome.Failed)
+        assertEquals(listOf(event), outbox.state.pending)
+
+        server.offline = false
+        assertTrue(engine.sync(force = true) is SyncOutcome.Done)
+        val received = server.received.getValue(event.eventId)
+        assertEquals("nod_ic", received.nodeId)
+        assertEquals(null, received.stepId)
+        assertEquals(null, received.resourceId)
+        assertEquals(ActivityKind.TRAINING, received.activityKind)
+        assertEquals(ActivityUnit.Annale("ECN 2019 — dossier 3"), received.unit)
     }
 
     @Test
@@ -254,6 +312,7 @@ class StudyLoopEndToEndTest {
                 etape.copy(stepId = "stp_pose_en_premier"),
                 etape.copy(stepId = "stp_pose_en_second", label = "Pharmaco"),
             ),
+            nodes = listOf(matiere, chapitre),
         )
 
         engine.sync()
@@ -261,6 +320,7 @@ class StudyLoopEndToEndTest {
             listOf("stp_pose_en_premier", "stp_pose_en_second"),
             cache.stored.snapshot.items.map { it.stepId },
         )
+        assertEquals(listOf("nod_cardio", "nod_ic"), cache.stored.snapshot.nodes.map { it.nodeId })
 
         // Réseau coupé : la copie précédente reste, elle n'est pas écrasée par
         // du vide. Une file vide et une file inconnue ne se ressemblent pas.
@@ -268,6 +328,7 @@ class StudyLoopEndToEndTest {
         engine.sync(force = true)
 
         assertEquals(2, cache.stored.snapshot.items.size)
+        assertEquals(2, cache.stored.snapshot.nodes.size)
         assertFalse(engine.state.value.halted)
     }
 

@@ -37,6 +37,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.albugimed.blockerspike.sync.AcademicNodeKind
+import com.albugimed.blockerspike.sync.AcademicNodeRef
+import com.albugimed.blockerspike.sync.ActivityKind
 import com.albugimed.blockerspike.sync.Difficulty
 import com.albugimed.blockerspike.sync.QueueItem
 import com.albugimed.blockerspike.ui.Section
@@ -47,6 +50,7 @@ class DeclareActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val stepId = intent.getStringExtra(EXTRA_STEP_ID)
+        val freeDeclaration = intent.getBooleanExtra(EXTRA_FREE_DECLARATION, false)
         val repository = StudyDependencies.repository(applicationContext)
         setContent {
             MaterialTheme {
@@ -54,11 +58,20 @@ class DeclareActivity : ComponentActivity() {
                     initialValue = StudyQueueState(),
                 )
                 val queueItem = queue.items.firstOrNull { it.stepId == stepId }
-                if (queueItem == null) {
+                if (freeDeclaration) {
+                    DeclareScreen(
+                        queueItem = null,
+                        nodes = queue.nodes,
+                        repository = repository,
+                        onOpenResource = ::openResource,
+                        onDone = ::finish,
+                    )
+                } else if (queueItem == null) {
                     MissingStepScreen(onClose = ::finish)
                 } else {
                     DeclareScreen(
                         queueItem = queueItem,
+                        nodes = emptyList(),
                         repository = repository,
                         onOpenResource = ::openResource,
                         onDone = ::finish,
@@ -79,10 +92,15 @@ class DeclareActivity : ComponentActivity() {
 
     companion object {
         private const val EXTRA_STEP_ID = "study_step_id"
+        private const val EXTRA_FREE_DECLARATION = "study_free_declaration"
 
         fun intent(context: Context, stepId: String): Intent =
             Intent(context, DeclareActivity::class.java)
                 .putExtra(EXTRA_STEP_ID, stepId)
+
+        fun freeIntent(context: Context): Intent =
+            Intent(context, DeclareActivity::class.java)
+                .putExtra(EXTRA_FREE_DECLARATION, true)
     }
 }
 
@@ -105,7 +123,8 @@ private fun MissingStepScreen(onClose: () -> Unit) {
 
 @Composable
 internal fun DeclareScreen(
-    queueItem: QueueItem,
+    queueItem: QueueItem?,
+    nodes: List<AcademicNodeRef>,
     repository: StudyRepository,
     onOpenResource: (String) -> String?,
     onDone: () -> Unit,
@@ -123,8 +142,17 @@ internal fun DeclareScreen(
     var resourceError by rememberSaveable { mutableStateOf<String?>(null) }
     var saved by rememberSaveable { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
+    var selectedSubjectId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedChapterId by rememberSaveable { mutableStateOf<String?>(null) }
+    var activityKindName by rememberSaveable { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val unitType = WorkUnitType.valueOf(unitTypeName)
+    val selectedChapter = nodes.firstOrNull {
+        it.kind == AcademicNodeKind.CHAPTER &&
+            it.nodeId == selectedChapterId &&
+            it.parentId == selectedSubjectId
+    }
+    val activityKind = ActivityKind.entries.firstOrNull { it.name == activityKindName }
 
     Scaffold { padding ->
         androidx.compose.foundation.lazy.LazyColumn(
@@ -135,12 +163,34 @@ internal fun DeclareScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item {
-                Text("Déclarer le travail", style = MaterialTheme.typography.headlineMedium)
+                Text(
+                    if (queueItem == null) "Déclarer hors file" else "Déclarer le travail",
+                    style = MaterialTheme.typography.headlineMedium,
+                )
             }
             item {
-                StepReminder(queueItem)
+                if (queueItem == null) {
+                    FreeTargetPicker(
+                        nodes = nodes,
+                        selectedSubjectId = selectedSubjectId,
+                        selectedChapterId = selectedChapterId,
+                        selectedActivityKind = activityKind,
+                        onSubjectSelected = { subjectId ->
+                            selectedSubjectId = subjectId
+                            selectedChapterId = null
+                            activityKindName = null
+                        },
+                        onChapterSelected = {
+                            selectedChapterId = it
+                            activityKindName = null
+                        },
+                        onActivityKindSelected = { activityKindName = it.name },
+                    )
+                } else {
+                    StepReminder(queueItem)
+                }
             }
-            queueItem.resource?.openUri?.let { openUri ->
+            queueItem?.resource?.openUri?.let { openUri ->
                 item {
                     OutlinedButton(
                         onClick = {
@@ -304,11 +354,22 @@ internal fun DeclareScreen(
                             difficulty = difficultyName?.let(Difficulty::valueOf),
                             note = note,
                         )
-                        when (val result = buildActivityDeclaration(
-                            item = queueItem,
-                            form = form,
-                            occurredAt = OffsetDateTime.now(),
-                        )) {
+                        val occurredAt = OffsetDateTime.now()
+                        val result = if (queueItem == null) {
+                            buildFreeActivityDeclaration(
+                                chapter = selectedChapter,
+                                activityKind = activityKind,
+                                form = form,
+                                occurredAt = occurredAt,
+                            )
+                        } else {
+                            buildActivityDeclaration(
+                                item = queueItem,
+                                form = form,
+                                occurredAt = occurredAt,
+                            )
+                        }
+                        when (result) {
                             is DeclarationBuildResult.Invalid -> {
                                 validationMessage = result.errors.joinToString("\n")
                             }
@@ -356,6 +417,90 @@ internal fun DeclareScreen(
 }
 
 @Composable
+private fun FreeTargetPicker(
+    nodes: List<AcademicNodeRef>,
+    selectedSubjectId: String?,
+    selectedChapterId: String?,
+    selectedActivityKind: ActivityKind?,
+    onSubjectSelected: (String) -> Unit,
+    onChapterSelected: (String) -> Unit,
+    onActivityKindSelected: (ActivityKind) -> Unit,
+) {
+    val subjects = nodes.filter { it.kind == AcademicNodeKind.SUBJECT }
+    val selectedSubject = subjects.firstOrNull { it.nodeId == selectedSubjectId }
+    val chapters = if (selectedSubject == null) {
+        emptyList()
+    } else {
+        nodes.filter {
+            it.kind == AcademicNodeKind.CHAPTER && it.parentId == selectedSubject.nodeId
+        }
+    }
+    val selectedChapter = chapters.firstOrNull { it.nodeId == selectedChapterId }
+
+    Section("Cible") {
+        Text("Matière", style = MaterialTheme.typography.labelLarge)
+        if (subjects.isEmpty()) {
+            Text("Aucune matière disponible dans la copie locale. Actualise la file.")
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                subjects.forEach { subject ->
+                    FilterChip(
+                        selected = subject.nodeId == selectedSubjectId,
+                        onClick = { onSubjectSelected(subject.nodeId) },
+                        label = { Text(subject.label) },
+                    )
+                }
+            }
+        }
+
+        Text("Chapitre", style = MaterialTheme.typography.labelLarge)
+        when {
+            selectedSubject == null -> Text("Choisis d'abord une matière.")
+            chapters.isEmpty() -> Text("Cette matière n'a aucun chapitre disponible.")
+            else -> Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                chapters.forEach { chapter ->
+                    FilterChip(
+                        selected = chapter.nodeId == selectedChapterId,
+                        onClick = { onChapterSelected(chapter.nodeId) },
+                        label = { Text(chapter.label) },
+                    )
+                }
+            }
+        }
+
+        Text("Type de travail", style = MaterialTheme.typography.labelLarge)
+        if (selectedChapter == null) {
+            Text("Choisis d'abord un chapitre.")
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ActivityKind.entries.forEach { kind ->
+                    FilterChip(
+                        selected = kind == selectedActivityKind,
+                        onClick = { onActivityKindSelected(kind) },
+                        label = { Text(kind.wireName.displayKindLabel()) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun StepReminder(item: QueueItem) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -367,6 +512,12 @@ private fun StepReminder(item: QueueItem) {
             Text(item.label, style = MaterialTheme.typography.titleMedium)
             Text(item.subject.label)
             Text(item.kind.displayKindLabel(), style = MaterialTheme.typography.bodySmall)
+            item.signals.lastWork?.let { lastWork ->
+                Text(
+                    "Dernier travail : ${lastWorkDisplayLabel(lastWork, item.resource)}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
         }
     }
 }

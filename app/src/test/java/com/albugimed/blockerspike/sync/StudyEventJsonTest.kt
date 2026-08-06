@@ -63,6 +63,23 @@ class StudyEventJsonTest {
         assertEquals(minimal, relu)
         assertNull(relu?.durationMinutes)
         assertNull(relu?.unit)
+        // Une ancienne entrée de l'outbox n'a pas `activity_kind`.
+        assertNull(relu?.activityKind)
+    }
+
+    @Test
+    fun chaqueTypeDeTravailFaitUnAllerRetourFilaire() {
+        ActivityKind.entries.forEach { kind ->
+            val event = complet.copy(
+                stepId = null,
+                resourceId = null,
+                activityKind = kind,
+            )
+
+            val encoded = StudyEventJson.encode(event)
+            assertEquals(kind.wireName, encoded.getJSONObject("payload").getString("activity_kind"))
+            assertEquals(kind, StudyEventJson.decode(encoded.toString())?.activityKind)
+        }
     }
 
     @Test
@@ -78,6 +95,7 @@ class StudyEventJsonTest {
         assertEquals("hard", payload.getString("difficulty"))
         assertEquals("pages", payload.getJSONObject("unit").getString("type"))
         assertEquals(47, payload.getJSONObject("unit").getInt("from"))
+        assertTrue(!payload.has("activity_kind"))
     }
 
     @Test

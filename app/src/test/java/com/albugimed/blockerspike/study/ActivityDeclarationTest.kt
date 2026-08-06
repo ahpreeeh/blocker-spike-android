@@ -1,10 +1,14 @@
 package com.albugimed.blockerspike.study
 
 import com.albugimed.blockerspike.sync.ActivityUnit
+import com.albugimed.blockerspike.sync.AcademicNodeKind
+import com.albugimed.blockerspike.sync.AcademicNodeRef
+import com.albugimed.blockerspike.sync.ActivityKind
 import com.albugimed.blockerspike.sync.Difficulty
 import com.albugimed.blockerspike.sync.NodeRef
 import com.albugimed.blockerspike.sync.QueueItem
 import com.albugimed.blockerspike.sync.QueueSignals
+import com.albugimed.blockerspike.sync.ResourceRef
 import com.albugimed.blockerspike.sync.StudyEventType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -20,7 +24,12 @@ class ActivityDeclarationTest {
         kind = "revision",
         subject = NodeRef("nod_subject", "Cardiologie"),
         chapter = NodeRef("nod_chapter", "Insuffisance cardiaque"),
-        resource = null,
+        resource = ResourceRef(
+            resourceId = "res_college_cardio",
+            label = "Collège de cardiologie",
+            type = "pdf_drive",
+            openUri = "https://drive.example/cardio",
+        ),
         signals = QueueSignals(null, null, null, null),
     )
 
@@ -38,6 +47,9 @@ class ActivityDeclarationTest {
 
         assertEquals("nod_chapter", result.nodeId)
         assertEquals("stp_01JZQK3M8F2W", result.stepId)
+        assertEquals("res_college_cardio", result.resourceId)
+        // Le type de l'étape reste l'autorité côté serveur.
+        assertNull(result.activityKind)
         assertEquals(35, result.durationMinutes)
         assertEquals(ActivityUnit.Pages(from = 47, to = 62), result.unit)
         assertEquals(Difficulty.HARD, result.difficulty)
@@ -131,8 +143,93 @@ class ActivityDeclarationTest {
         assertEquals("2026-07-31T15:42:00+02:00", event.occurredAt)
         assertEquals("nod_chapter", event.nodeId)
         assertEquals("stp_01JZQK3M8F2W", event.stepId)
+        assertEquals("res_college_cardio", event.resourceId)
+        assertNull(event.activityKind)
         assertEquals(ActivityUnit.Pages(1, 2), event.unit)
         assertEquals(Difficulty.HARD, event.difficulty)
+    }
+
+    @Test
+    fun `builds a free declaration without inventing a queue step`() {
+        val chapter = AcademicNodeRef(
+            nodeId = "nod_chapter",
+            label = "Insuffisance cardiaque",
+            kind = AcademicNodeKind.CHAPTER,
+            parentId = "nod_subject",
+        )
+
+        val declaration = buildFreeActivityDeclaration(
+            chapter = chapter,
+            activityKind = ActivityKind.TRAINING,
+            form = validForm(
+                unitType = WorkUnitType.ANNALE,
+                annaleLabel = "ECN 2019 — dossier 3",
+            ),
+            occurredAt = occurredAt,
+        ).requireValid()
+        val event = declaration.toStudyEvent("evt_free")
+
+        assertEquals("nod_chapter", declaration.nodeId)
+        assertNull(declaration.stepId)
+        assertNull(declaration.resourceId)
+        assertEquals(ActivityKind.TRAINING, declaration.activityKind)
+        assertNull(event.stepId)
+        assertNull(event.resourceId)
+        assertEquals(ActivityKind.TRAINING, event.activityKind)
+    }
+
+    @Test
+    fun `free declaration requires a chapter and an activity kind`() {
+        val result = buildFreeActivityDeclaration(
+            chapter = null,
+            activityKind = null,
+            form = validForm(),
+            occurredAt = occurredAt,
+        )
+
+        assertTrue(result is DeclarationBuildResult.Invalid)
+        val errors = (result as DeclarationBuildResult.Invalid).errors
+        assertEquals(listOf("Choisis un chapitre.", "Choisis un type de travail."), errors)
+    }
+
+    @Test
+    fun `a subject cannot masquerade as a chapter`() {
+        val subject = AcademicNodeRef(
+            nodeId = "nod_subject",
+            label = "Cardiologie",
+            kind = AcademicNodeKind.SUBJECT,
+            parentId = null,
+        )
+
+        val result = buildFreeActivityDeclaration(
+            chapter = subject,
+            activityKind = ActivityKind.READING,
+            form = validForm(),
+            occurredAt = occurredAt,
+        )
+
+        assertTrue(result is DeclarationBuildResult.Invalid)
+        assertTrue((result as DeclarationBuildResult.Invalid).errors.contains("Choisis un chapitre."))
+    }
+
+    @Test
+    fun `every free activity kind stays a fact and creates no android counter`() {
+        val chapter = AcademicNodeRef(
+            nodeId = "nod_chapter",
+            label = "Insuffisance cardiaque",
+            kind = AcademicNodeKind.CHAPTER,
+            parentId = "nod_subject",
+        )
+
+        ActivityKind.entries.forEach { kind ->
+            val declaration = buildFreeActivityDeclaration(
+                chapter = chapter,
+                activityKind = kind,
+                form = validForm(),
+                occurredAt = occurredAt,
+            ).requireValid()
+            assertEquals(kind, declaration.toStudyEvent("evt_${kind.name}").activityKind)
+        }
     }
 
     private fun validForm(

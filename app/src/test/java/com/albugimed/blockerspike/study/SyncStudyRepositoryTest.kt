@@ -1,6 +1,9 @@
 package com.albugimed.blockerspike.study
 
 import com.albugimed.blockerspike.sync.ActivityUnit
+import com.albugimed.blockerspike.sync.AcademicNodeKind
+import com.albugimed.blockerspike.sync.AcademicNodeRef
+import com.albugimed.blockerspike.sync.ActivityKind
 import com.albugimed.blockerspike.sync.CachedQueue
 import com.albugimed.blockerspike.sync.DeadEvent
 import com.albugimed.blockerspike.sync.Difficulty
@@ -58,6 +61,30 @@ class SyncStudyRepositoryTest {
 
         repository.saveActivityLocally(declaration)
         runCatching { repository.syncAfterLocalSave() }
+    }
+
+    @Test
+    fun `free declaration reaches the outbox without a fabricated step`() = runTest {
+        var enqueued: StudyEvent? = null
+        val repository = repository(
+            enqueue = {
+                enqueued = it
+                true
+            },
+            sync = {},
+        )
+        val free = declaration.copy(
+            stepId = null,
+            resourceId = null,
+            activityKind = ActivityKind.READING,
+        )
+
+        repository.saveActivityLocally(free)
+
+        assertEquals("nod_chapter", enqueued?.nodeId)
+        assertEquals(null, enqueued?.stepId)
+        assertEquals(null, enqueued?.resourceId)
+        assertEquals(ActivityKind.READING, enqueued?.activityKind)
     }
 
     @Test
@@ -122,6 +149,21 @@ class SyncStudyRepositoryTest {
                     generatedAt = "server",
                     items = emptyList(),
                     skipped = 3,
+                    nodes = listOf(
+                        AcademicNodeRef(
+                            nodeId = "nod_subject",
+                            label = "Cardiologie",
+                            kind = AcademicNodeKind.SUBJECT,
+                            parentId = null,
+                        ),
+                        AcademicNodeRef(
+                            nodeId = "nod_chapter",
+                            label = "Insuffisance cardiaque",
+                            kind = AcademicNodeKind.CHAPTER,
+                            parentId = "nod_subject",
+                        ),
+                    ),
+                    skippedNodes = 2,
                 ),
                 fetchedAtMillis = 1234L,
             ),
@@ -145,6 +187,8 @@ class SyncStudyRepositoryTest {
 
         assertEquals(1234L, state.cachedAtMillis)
         assertEquals(3, state.skippedQueueItems)
+        assertEquals(listOf("nod_subject", "nod_chapter"), state.nodes.map { it.nodeId })
+        assertEquals(2, state.skippedQueueNodes)
         assertEquals(1, state.pendingCount)
         assertEquals(1, state.rejectedEvents.size)
         assertEquals(2, state.unreadableCount)
