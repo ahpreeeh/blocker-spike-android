@@ -62,6 +62,14 @@ class ReadingPositionTest {
         // l'invente pas.
         assertEquals("Reprendre page 67", resumeButtonLabel(position(pageCount = 0)))
     }
+
+    @Test
+    fun `sans document rattache le bouton ne dit pas Reprendre`() {
+        // Le bouton DOIT exister avant tout rattachement — sinon il n'y a
+        // aucun moyen d'attacher un premier PDF, et le lecteur est
+        // inatteignable. Défaut trouvé sur l'appareil, pas en test.
+        assertEquals("Rattacher un PDF", resumeButtonLabel(null))
+    }
 }
 
 class ReadingPositionJsonTest {

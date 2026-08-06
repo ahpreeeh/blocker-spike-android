@@ -379,10 +379,12 @@ private fun QueueItemCard(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            // V2.2 : le mot change seulement quand la promesse peut etre
-            // tenue. Sans document rattache, rien ne ramene a la page, et
+            // V2.2 : le bouton existe des qu'il y a une ressource, sinon
+            // rien ne permettrait de rattacher un document la premiere fois.
+            // C'est le MOT qui change, et seulement quand la promesse peut
+            // etre tenue : sans document, rien ne ramene a la page, et
             // afficher "Reprendre" serait mentir.
-            if (position != null) {
+            if (item.resource != null) {
                 OutlinedButton(onClick = onResume, modifier = Modifier.fillMaxWidth()) {
                     Text(resumeButtonLabel(position))
                 }
@@ -392,15 +394,18 @@ private fun QueueItemCard(
 }
 
 /**
- * Le libelle du bouton de reprise. Il nomme la page, pas seulement l'action :
- * "Reprendre" seul obligerait a ouvrir pour savoir ou l'on atterrit.
+ * Le libelle du bouton du lecteur.
+ *
+ * Sans document rattache il dit ce qu'il va falloir faire, et surtout PAS
+ * "Reprendre" : rien ne ramene encore a une page, et le mot serait un
+ * mensonge. Avec un document, il nomme la page plutot que l'action seule —
+ * "Reprendre" tout court obligerait a ouvrir pour savoir ou l'on atterrit.
  */
-internal fun resumeButtonLabel(position: ReadingPosition): String =
-    if (position.pageCount > 0) {
-        "Reprendre page ${position.page} / ${position.pageCount}"
-    } else {
-        "Reprendre page ${position.page}"
-    }
+internal fun resumeButtonLabel(position: ReadingPosition?): String = when {
+    position == null -> "Rattacher un PDF"
+    position.pageCount > 0 -> "Reprendre page ${position.page} / ${position.pageCount}"
+    else -> "Reprendre page ${position.page}"
+}
 
 internal fun cacheFreshnessLabel(cachedAtMillis: Long?): String {
     if (cachedAtMillis == null) return "File à jour du —"
