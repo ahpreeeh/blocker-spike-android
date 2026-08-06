@@ -49,6 +49,27 @@
             </intent-filter>
         </activity>
 
+        <!--
+             Point d'entrée du partage — V2.1. `exported` est nécessaire : une
+             autre application doit pouvoir viser ce composant, c'est tout
+             l'intérêt d'un partage. `excludeFromRecents` et `noHistory` :
+             l'écran ne montre rien et se ferme aussitôt, il n'a rien à faire
+             dans la liste des tâches.
+        -->
+        <activity
+            android:name=".capture.ShareCaptureActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:label="@string/capture_share_label">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name=".study.StudyQueueActivity"
             android:exported="false" />

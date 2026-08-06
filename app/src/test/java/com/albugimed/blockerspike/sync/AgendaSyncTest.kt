@@ -1,5 +1,8 @@
 package com.albugimed.blockerspike.sync
 
+import com.albugimed.blockerspike.capture.Capture
+import com.albugimed.blockerspike.capture.CaptureDelivery
+
 import java.time.OffsetDateTime
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -89,6 +92,17 @@ class AgendaSyncTest {
             deviceId: String,
             events: List<StudyEvent>,
         ): EventDelivery = EventDelivery.Answered(emptyList())
+
+        /**
+         * Le moteur d'études n'envoie jamais de capture : les deux files ont
+         * des calendriers séparés (contrat §16). Cette doublure le vérifie en
+         * échouant si quelque chose l'appelait ici.
+         */
+        override suspend fun sendCaptures(
+            credentials: DeviceCredentials,
+            deviceId: String,
+            captures: List<Capture>,
+        ): CaptureDelivery = error("le moteur d'études n'envoie pas de captures")
     }
 
     @Test

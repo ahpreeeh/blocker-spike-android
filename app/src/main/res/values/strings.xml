@@ -6,6 +6,8 @@
     <string name="device_admin_disable_warning">Retirer l’administration désactive immédiatement la suspension système.</string>
     <string name="accessibility_service_description">Détecte uniquement le package de l’application au premier plan. Ne lit aucun contenu d’écran.</string>
     <string name="channel_block_name">Interceptions</string>
+    <!-- Ce que le sélecteur de partage d'Android affiche sous l'icône. -->
+    <string name="capture_share_label">Capturer</string>
     <string name="notif_blocked_title">Application bloquée</string>
     <string name="notif_blocked_text">%1$s est bloquée. Touchez pour ouvrir le parcours de demande.</string>
 </resources>

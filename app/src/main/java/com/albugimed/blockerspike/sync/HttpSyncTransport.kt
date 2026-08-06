@@ -1,5 +1,8 @@
 package com.albugimed.blockerspike.sync
 
+import com.albugimed.blockerspike.capture.Capture
+import com.albugimed.blockerspike.capture.CaptureDelivery
+import com.albugimed.blockerspike.capture.CaptureJson
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -143,6 +146,50 @@ class HttpSyncTransport(
             }
         } catch (error: IOException) {
             EventDelivery.Failed(error.javaClass.simpleName, retryable = true)
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    override suspend fun sendCaptures(
+        credentials: DeviceCredentials,
+        deviceId: String,
+        captures: List<Capture>,
+    ): CaptureDelivery = withContext(dispatcher) {
+        val connection = open(credentials, "/api/v1/captures")
+            ?: return@withContext CaptureDelivery.Failed(
+                "Adresse de serveur inutilisable",
+                retryable = false,
+            )
+
+        try {
+            connection.requestMethod = "POST"
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+
+            val body = CaptureJson.encodeBatch(deviceId, captures).toByteArray(Charsets.UTF_8)
+            connection.setFixedLengthStreamingMode(body.size)
+            connection.outputStream.use { it.write(body) }
+
+            when (val status = connection.responseCode) {
+                HttpURLConnection.HTTP_OK -> {
+                    val answer = connection.inputStream.bufferedReader().use { it.readText() }
+                    val results = CaptureJson.decodeResults(answer)
+                    if (results == null) {
+                        // Illisible n'est pas refusé : on garde tout et on
+                        // réessaiera. Le rejeu porte le même `capture_id`.
+                        CaptureDelivery.Failed("Réponse de verdicts illisible", retryable = true)
+                    } else {
+                        CaptureDelivery.Answered(results)
+                    }
+                }
+
+                HttpURLConnection.HTTP_UNAUTHORIZED -> CaptureDelivery.Unauthorized
+                HttpURLConnection.HTTP_ENTITY_TOO_LARGE -> CaptureDelivery.TooLarge
+                else -> CaptureDelivery.Failed("HTTP $status", retryable = status >= 500)
+            }
+        } catch (error: IOException) {
+            CaptureDelivery.Failed(error.javaClass.simpleName, retryable = true)
         } finally {
             connection.disconnect()
         }

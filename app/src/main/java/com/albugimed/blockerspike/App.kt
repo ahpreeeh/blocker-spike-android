@@ -5,6 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import com.albugimed.blockerspike.admin.DeviceOwnerController
+import com.albugimed.blockerspike.capture.CaptureDatabase
+import com.albugimed.blockerspike.capture.CaptureOutboxRepository
 import com.albugimed.blockerspike.guide.BlockGuideRepository
 import com.albugimed.blockerspike.inference.InferenceClient
 import com.albugimed.blockerspike.inference.PolicyEnforcer
@@ -14,8 +16,10 @@ import com.albugimed.blockerspike.sync.AgendaCacheRepository
 import com.albugimed.blockerspike.sync.HttpSyncTransport
 import com.albugimed.blockerspike.sync.KeystoreCredentialStore
 import com.albugimed.blockerspike.sync.QueueCacheRepository
+import com.albugimed.blockerspike.sync.DeviceCredentialStore
 import com.albugimed.blockerspike.sync.StudyOutboxRepository
 import com.albugimed.blockerspike.sync.SyncEngine
+import com.albugimed.blockerspike.sync.SyncTransport
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -79,6 +83,19 @@ object Graph {
     /** Magasin prive distinct de `block_policy`; aucun consommateur metier en V1.3. */
     lateinit var blockGuideRepository: BlockGuideRepository
         private set
+
+    /**
+     * Côté captures — V2.1. Base Room à part, et non un quatrième magasin
+     * DataStore : une capture volumineuse ne doit jamais pouvoir retarder une
+     * trace d'étude. Les deux files ne se croisent qu'ici, et ne se touchent
+     * pas davantage qu'ailleurs.
+     */
+    lateinit var captureOutbox: CaptureOutboxRepository
+        private set
+    lateinit var captureCredentials: DeviceCredentialStore
+        private set
+    lateinit var captureTransport: SyncTransport
+        private set
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var reconciliationStarted = false
 
@@ -101,14 +118,19 @@ object Graph {
         )
 
         studyOutbox = StudyOutboxRepository(context.applicationContext)
+        captureOutbox = CaptureOutboxRepository(
+            CaptureDatabase.get(context.applicationContext).captures(),
+        )
+        captureCredentials = KeystoreCredentialStore(context.applicationContext)
+        captureTransport = HttpSyncTransport()
         queueCache = QueueCacheRepository(context.applicationContext)
         agendaCache = AgendaCacheRepository(context.applicationContext)
         blockGuideRepository = BlockGuideRepository(context.applicationContext)
         syncEngine = SyncEngine(
             outbox = studyOutbox,
             queueCache = queueCache,
-            credentialStore = KeystoreCredentialStore(context.applicationContext),
-            transport = HttpSyncTransport(),
+            credentialStore = captureCredentials,
+            transport = captureTransport,
             agendaCache = agendaCache,
         )
     }

@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
 }
 
 val permanentSigningFile = rootProject.file("signing/albugimed-signing.properties")
@@ -55,8 +56,8 @@ android {
         create("permanent") {
             dimension = "identity"
             applicationId = "com.albugimed.app"
-            versionCode = 6
-            versionName = "0.4.0-v1.1-dernier-travail"
+            versionCode = 7
+            versionName = "0.5.0-v2.1-capture"
             manifestPlaceholders["deviceAdminReceiverClass"] =
                 "com.albugimed.app.admin.AlbugimedDeviceAdminReceiver"
             manifestPlaceholders["applicationLabel"] = "Albugimed"
@@ -128,6 +129,14 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     debugImplementation(libs.androidx.compose.ui.tooling)
     implementation(libs.androidx.datastore.preferences)
+    // V2.1. Room porte la file des captures, WorkManager son envoi. Contrat
+    // §10 point 2 : ni l'un ni l'autre n'émet de requête propre — WorkManager
+    // ne fait qu'ordonnancer `CaptureUploadWorker`, qui passe par le même
+    // `HttpSyncTransport` que le reste. La surface réseau reste un fichier.
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+    implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.litert.lm.android)
     testImplementation(libs.junit)
     testImplementation(libs.json)

@@ -1,5 +1,8 @@
 package com.albugimed.blockerspike.sync
 
+import com.albugimed.blockerspike.capture.Capture
+import com.albugimed.blockerspike.capture.CaptureDelivery
+
 import com.albugimed.blockerspike.study.DeclarationBuildResult
 import com.albugimed.blockerspike.study.DeclareFormState
 import com.albugimed.blockerspike.study.WorkUnitType
@@ -81,6 +84,18 @@ class StudyLoopEndToEndTest {
             }
             return EventDelivery.Answered(results)
         }
+
+        /**
+         * Le moteur d'études n'envoie jamais de capture : les deux files ont
+         * des calendriers séparés (contrat §16). Cette doublure le vérifie en
+         * échouant si quelque chose l'appelait ici.
+         */
+        override suspend fun sendCaptures(
+            credentials: DeviceCredentials,
+            deviceId: String,
+            captures: List<Capture>,
+        ): CaptureDelivery = error("le moteur d'études n'envoie pas de captures")
+
     }
 
     private class MemoryOutbox : StudyOutbox {

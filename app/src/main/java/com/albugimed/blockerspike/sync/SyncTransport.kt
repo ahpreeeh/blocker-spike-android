@@ -1,12 +1,19 @@
 package com.albugimed.blockerspike.sync
 
+import com.albugimed.blockerspike.capture.Capture
+import com.albugimed.blockerspike.capture.CaptureDelivery
+
 /**
- * Toute la surface réseau d'études de l'application, en trois méthodes.
+ * Toute la surface réseau de l'application, en quatre méthodes.
  *
  * L'interface est étroite exprès. Le §10 du contrat impose de pouvoir dire,
  * à tout moment et sans lire tout le code, **ce que l'application envoie et
- * à qui**. Trois points de terminaison, un hôte, aucun autre appel : ce
+ * à qui**. Quatre points de terminaison, un hôte, aucun autre appel : ce
  * fichier est la preuve, et son étroitesse est la garantie.
+ *
+ * `sendCaptures` a rejoint la liste en V2.1. Elle n'est pas appelée par le
+ * moteur d'études mais par `CaptureUploadWorker` : deux files, deux
+ * calendriers d'envoi, aucune capture ne peut retarder une trace.
  */
 interface SyncTransport {
     suspend fun fetchQueue(credentials: DeviceCredentials, etag: String?): QueueFetch
@@ -18,6 +25,12 @@ interface SyncTransport {
         deviceId: String,
         events: List<StudyEvent>,
     ): EventDelivery
+
+    suspend fun sendCaptures(
+        credentials: DeviceCredentials,
+        deviceId: String,
+        captures: List<Capture>,
+    ): CaptureDelivery
 }
 
 sealed interface AgendaFetch {
