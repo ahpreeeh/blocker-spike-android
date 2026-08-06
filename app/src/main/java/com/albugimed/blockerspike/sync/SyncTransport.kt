@@ -1,21 +1,34 @@
 package com.albugimed.blockerspike.sync
 
 /**
- * Toute la surface réseau de l'application, en deux méthodes.
+ * Toute la surface réseau d'études de l'application, en trois méthodes.
  *
  * L'interface est étroite exprès. Le §10 du contrat impose de pouvoir dire,
  * à tout moment et sans lire tout le code, **ce que l'application envoie et
- * à qui**. Deux points de terminaison, un hôte, aucun autre appel : ce
+ * à qui**. Trois points de terminaison, un hôte, aucun autre appel : ce
  * fichier est la preuve, et son étroitesse est la garantie.
  */
 interface SyncTransport {
     suspend fun fetchQueue(credentials: DeviceCredentials, etag: String?): QueueFetch
+
+    suspend fun fetchAgenda(credentials: DeviceCredentials, etag: String?): AgendaFetch
 
     suspend fun sendEvents(
         credentials: DeviceCredentials,
         deviceId: String,
         events: List<StudyEvent>,
     ): EventDelivery
+}
+
+sealed interface AgendaFetch {
+    data class Fresh(
+        val snapshot: AgendaSnapshot,
+        val etag: String?,
+    ) : AgendaFetch
+
+    data object NotModified : AgendaFetch
+    data object Unauthorized : AgendaFetch
+    data class Failed(val reason: String, val retryable: Boolean) : AgendaFetch
 }
 
 data class EventResult(val eventId: String, val status: String, val reason: String?) {

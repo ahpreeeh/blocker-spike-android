@@ -46,6 +46,15 @@ class StudyLoopEndToEndTest {
             if (server.offline) QueueFetch.Failed("Réseau coupé", retryable = true)
             else QueueFetch.Fresh(server.queue, etag = "\"v1\"", deviceId = "poco-x7")
 
+        override suspend fun fetchAgenda(
+            credentials: DeviceCredentials,
+            etag: String?,
+        ): AgendaFetch = if (server.offline) {
+            AgendaFetch.Failed("Réseau coupé", retryable = true)
+        } else {
+            AgendaFetch.NotModified
+        }
+
         override suspend fun sendEvents(
             credentials: DeviceCredentials,
             deviceId: String,

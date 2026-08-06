@@ -90,6 +90,11 @@ class SyncEngineTest {
             return queueAnswer
         }
 
+        override suspend fun fetchAgenda(
+            credentials: DeviceCredentials,
+            etag: String?,
+        ): AgendaFetch = AgendaFetch.NotModified
+
         override suspend fun sendEvents(
             credentials: DeviceCredentials,
             deviceId: String,

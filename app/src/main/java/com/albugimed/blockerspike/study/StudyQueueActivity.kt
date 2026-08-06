@@ -79,6 +79,9 @@ internal fun StudyQueueScreen(
     val state by repository.queueState.collectAsStateWithLifecycle(
         initialValue = StudyQueueState(),
     )
+    val agendaState by repository.agendaState.collectAsStateWithLifecycle(
+        initialValue = AgendaState(),
+    )
     val syncState by repository.syncState.collectAsStateWithLifecycle(
         initialValue = SyncState(),
     )
@@ -109,6 +112,9 @@ internal fun StudyQueueScreen(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            item {
+                AgendaHeader(agendaState)
+            }
             item {
                 Text("File", style = MaterialTheme.typography.headlineMedium)
             }

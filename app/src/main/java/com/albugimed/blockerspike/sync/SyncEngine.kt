@@ -75,6 +75,7 @@ class SyncEngine(
     private val queueCache: QueueCache,
     private val credentialStore: DeviceCredentialStore,
     private val transport: SyncTransport,
+    private val agendaCache: AgendaCache? = null,
     private val timeSource: TimeSource = SystemTimeSource,
     private val logger: SyncLogger = SystemSyncLogger,
 ) {
@@ -106,6 +107,7 @@ class SyncEngine(
                     return@withLock EnrolOutcome.Unreachable("Jeton non enregistrable sur l'appareil")
                 }
                 queueCache.store(fetch.snapshot, fetch.etag, timeSource.nowMillis())
+                refreshAgenda(candidate)
                 _state.value = SyncState(enrolled = true, lastSuccessAtMillis = timeSource.nowMillis())
                 logger.add(SyncLogger.TAG_SYNC, "Appareil enrôlé : $deviceId")
                 EnrolOutcome.Enrolled(deviceId)
@@ -121,6 +123,7 @@ class SyncEngine(
     suspend fun forgetDevice() = mutex.withLock {
         credentialStore.clear()
         queueCache.clear()
+        agendaCache?.clear()
         _state.value = SyncState()
     }
 
@@ -132,6 +135,12 @@ class SyncEngine(
             return@withLock SyncOutcome.NotEnrolled
         }
         if (_state.value.halted && !force) return@withLock SyncOutcome.Halted
+
+        // Le dos exponentiel protège l'envoi des traces. Il ne doit pas
+        // empêcher la lecture d'un agenda dont la fraîcheur a une gravité
+        // propre (contrat §15). Cet appel garde son ETag et reste sans effet
+        // sur l'outbox en cas de panne.
+        refreshAgenda(credentials) ?: return@withLock halt()
 
         val now = timeSource.nowMillis()
         val nextAttempt = _state.value.nextAttemptAtMillis
@@ -252,6 +261,42 @@ class SyncEngine(
             is QueueFetch.Failed -> {
                 // La file est du confort : son échec ne compromet aucune trace.
                 logger.add(SyncLogger.TAG_SYNC, "File non rafraîchie : ${fetch.reason}")
+                false
+            }
+        }
+    }
+
+    /**
+     * Rafraîchit le cache temporel indépendamment de la file académique.
+     * `null` conserve la signification commune d'un jeton refusé.
+     */
+    private suspend fun refreshAgenda(credentials: DeviceCredentials): Boolean? {
+        val cache = agendaCache ?: return false
+        val cached = cache.current()
+        return when (val fetch = transport.fetchAgenda(credentials, cached.etag)) {
+            is AgendaFetch.Fresh -> {
+                cache.store(fetch.snapshot, fetch.etag, timeSource.nowMillis())
+                val issues = fetch.snapshot.skippedWindowItems + fetch.snapshot.malformedFields
+                if (issues > 0) {
+                    logger.add(
+                        SyncLogger.TAG_ERROR,
+                        "$issues élément(s) de l'agenda illisible(s) et signalé(s).",
+                    )
+                }
+                true
+            }
+
+            AgendaFetch.NotModified -> {
+                cache.touch(timeSource.nowMillis())
+                false
+            }
+
+            AgendaFetch.Unauthorized -> null
+
+            is AgendaFetch.Failed -> {
+                // L'agenda en cache reste affichable : une panne ne doit ni
+                // effacer cette copie, ni compromettre l'envoi des traces.
+                logger.add(SyncLogger.TAG_SYNC, "Agenda non rafraîchi : ${fetch.reason}")
                 false
             }
         }

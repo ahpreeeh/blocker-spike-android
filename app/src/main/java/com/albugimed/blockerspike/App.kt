@@ -5,10 +5,12 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import com.albugimed.blockerspike.admin.DeviceOwnerController
+import com.albugimed.blockerspike.guide.BlockGuideRepository
 import com.albugimed.blockerspike.inference.InferenceClient
 import com.albugimed.blockerspike.inference.PolicyEnforcer
 import com.albugimed.blockerspike.inference.UnlockRequestCoordinator
 import com.albugimed.blockerspike.policy.BlockPolicyRepository
+import com.albugimed.blockerspike.sync.AgendaCacheRepository
 import com.albugimed.blockerspike.sync.HttpSyncTransport
 import com.albugimed.blockerspike.sync.KeystoreCredentialStore
 import com.albugimed.blockerspike.sync.QueueCacheRepository
@@ -70,7 +72,12 @@ object Graph {
         private set
     lateinit var queueCache: QueueCacheRepository
         private set
+    lateinit var agendaCache: AgendaCacheRepository
+        private set
     lateinit var syncEngine: SyncEngine
+        private set
+    /** Magasin prive distinct de `block_policy`; aucun consommateur metier en V1.3. */
+    lateinit var blockGuideRepository: BlockGuideRepository
         private set
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var reconciliationStarted = false
@@ -95,11 +102,14 @@ object Graph {
 
         studyOutbox = StudyOutboxRepository(context.applicationContext)
         queueCache = QueueCacheRepository(context.applicationContext)
+        agendaCache = AgendaCacheRepository(context.applicationContext)
+        blockGuideRepository = BlockGuideRepository(context.applicationContext)
         syncEngine = SyncEngine(
             outbox = studyOutbox,
             queueCache = queueCache,
             credentialStore = KeystoreCredentialStore(context.applicationContext),
             transport = HttpSyncTransport(),
+            agendaCache = agendaCache,
         )
     }
 

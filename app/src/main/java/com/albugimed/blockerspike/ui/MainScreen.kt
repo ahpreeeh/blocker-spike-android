@@ -1,5 +1,8 @@
 package com.albugimed.blockerspike.ui
 
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -41,11 +44,17 @@ import com.albugimed.blockerspike.diagnostics.openNotificationSettings
 import com.albugimed.blockerspike.diagnostics.openOverlaySettings
 import com.albugimed.blockerspike.diagnostics.readDiagnostics
 import com.albugimed.blockerspike.gate.BlockGateActivity
+import com.albugimed.blockerspike.guide.GuideAvailability
+import com.albugimed.blockerspike.guide.blockGuidePreview
+import com.albugimed.blockerspike.guide.displayText
+import com.albugimed.blockerspike.guide.formatGuideImportDate
 import com.albugimed.blockerspike.inference.ModelLocator
 import com.albugimed.blockerspike.log.InterceptionLog
 import com.albugimed.blockerspike.policy.PolicyState
 import com.albugimed.blockerspike.study.StudyQueueActivity
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -63,6 +72,43 @@ fun MainScreen() {
     val metrics = InterceptionLog.metrics()
     val scope = rememberCoroutineScope()
     val ownerRuntime by Graph.deviceOwnerController.runtime.collectAsStateWithLifecycle()
+    val guideState by Graph.blockGuideRepository.state.collectAsStateWithLifecycle()
+    val guidePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                withContext(Dispatchers.IO) {
+                    val sourceName = runCatching {
+                        context.contentResolver.query(
+                            uri,
+                            arrayOf(OpenableColumns.DISPLAY_NAME),
+                            null,
+                            null,
+                            null,
+                        )?.use { cursor ->
+                            if (cursor.moveToFirst()) cursor.getString(0) else null
+                        }
+                    }.getOrNull()
+                    val stream = runCatching {
+                        context.contentResolver.openInputStream(uri)
+                    }.getOrNull()
+                    if (stream == null) {
+                        Graph.blockGuideRepository.importGuide(
+                            sourceName = sourceName,
+                            input = object : java.io.InputStream() {
+                                override fun read(): Int = throw java.io.IOException(
+                                    "Document inaccessible",
+                                )
+                            },
+                        )
+                    } else {
+                        Graph.blockGuideRepository.importGuide(sourceName, stream)
+                    }
+                }
+            }
+        }
+    }
 
     var diagnostics by remember { mutableStateOf(readDiagnostics(context)) }
     var localModelPath by remember {
@@ -149,6 +195,78 @@ fun MainScreen() {
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text("Ouvrir la file")
+                    }
+                }
+            }
+
+            item {
+                Section("Guide de blocage") {
+                    when (guideState.availability) {
+                        GuideAvailability.ABSENT -> Text(
+                            "Aucun guide actif — le blocage conserve son comportement actuel.",
+                        )
+                        GuideAvailability.CORRUPTED -> Text(
+                            "Guide actif illisible — aucune regle du guide n'est exposee.",
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        GuideAvailability.ACTIVE -> {
+                            val guide = requireNotNull(guideState.active)
+                            Text("Guide actif : ${guide.metadata.guideVersion}")
+                            Text(
+                                "Mis a jour le ${guide.metadata.updatedAt}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Text(
+                                "Importe le ${formatGuideImportDate(guide.metadata.importedAtMillis)} " +
+                                    "— ${guide.metadata.sizeBytes} octets",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Text(
+                                "SHA-256 : ${guide.metadata.sha256}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Text("Apercu du corps", style = MaterialTheme.typography.labelMedium)
+                            Text(
+                                blockGuidePreview(guide.body),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+
+                    guideState.storageProblem?.let { problem ->
+                        Text(problem, color = MaterialTheme.colorScheme.error)
+                    }
+
+                    guideState.lastReport?.let { report ->
+                        Text(
+                            if (report.accepted) {
+                                "Derniere validation : acceptee"
+                            } else {
+                                "Derniere validation : refusee"
+                            },
+                            color = if (report.accepted) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            },
+                        )
+                        report.sourceName?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                        report.issues.forEach { issue ->
+                            Text(
+                                issue.displayText(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = {
+                            guidePicker.launch(arrayOf("text/markdown", "text/plain"))
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Importer un guide .md")
                     }
                 }
             }

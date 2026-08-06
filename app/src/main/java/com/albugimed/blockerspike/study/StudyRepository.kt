@@ -2,6 +2,7 @@ package com.albugimed.blockerspike.study
 
 import android.content.Context
 import com.albugimed.blockerspike.Graph
+import com.albugimed.blockerspike.sync.CachedAgenda
 import com.albugimed.blockerspike.sync.CachedQueue
 import com.albugimed.blockerspike.sync.EnrolOutcome
 import com.albugimed.blockerspike.sync.OutboxState
@@ -14,11 +15,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 
 /** Frontière testable entre les écrans D3 et le stockage/transport D1-D2. */
 interface StudyRepository {
     val queueState: Flow<StudyQueueState>
+    val agendaState: Flow<AgendaState>
     val syncState: Flow<SyncState>
 
     suspend fun enrolDevice(baseUrl: String, token: String): EnrolOutcome
@@ -42,6 +45,7 @@ class LocalStudySaveException : Exception("L'écriture dans la file locale a éc
 class SyncStudyRepository(
     cachedQueues: Flow<CachedQueue>,
     outboxStates: Flow<OutboxState>,
+    cachedAgendas: Flow<CachedAgenda> = flowOf(CachedAgenda()),
     override val syncState: Flow<SyncState> = flowOf(SyncState(enrolled = true)),
     private val enqueue: suspend (StudyEvent) -> Boolean,
     private val requestSync: suspend (force: Boolean) -> Unit,
@@ -51,6 +55,8 @@ class SyncStudyRepository(
     private val nowMillis: () -> Long = System::currentTimeMillis,
     private val eventIdFactory: (Long) -> String = { newEventId(it) },
 ) : StudyRepository {
+    override val agendaState: Flow<AgendaState> = cachedAgendas.map { it.toAgendaState() }
+
     override val queueState: Flow<StudyQueueState> = combine(
         cachedQueues,
         outboxStates,
@@ -92,12 +98,15 @@ class SyncStudyRepository(
 /** Simulacre manuel pour les previews/tests, suivant les conventions du dépôt. */
 class InMemoryStudyRepository(
     initialState: StudyQueueState = StudyQueueState(),
+    initialAgendaState: AgendaState = AgendaState(),
     initialSyncState: SyncState = SyncState(enrolled = true),
 ) : StudyRepository {
     private val mutableQueueState = MutableStateFlow(initialState)
     private val mutableDeclarations = mutableListOf<ActivityDeclaration>()
 
     override val queueState: StateFlow<StudyQueueState> = mutableQueueState.asStateFlow()
+    override val agendaState: StateFlow<AgendaState> =
+        MutableStateFlow(initialAgendaState).asStateFlow()
     override val syncState: StateFlow<SyncState> = MutableStateFlow(initialSyncState).asStateFlow()
 
     val savedDeclarations: List<ActivityDeclaration>
@@ -133,6 +142,7 @@ object StudyDependencies {
             installedRepository ?: SyncStudyRepository(
                 cachedQueues = Graph.queueCache.cached,
                 outboxStates = Graph.studyOutbox.state,
+                cachedAgendas = Graph.agendaCache.cached,
                 syncState = Graph.syncEngine.state,
                 enqueue = Graph.studyOutbox::enqueue,
                 requestSync = { force ->

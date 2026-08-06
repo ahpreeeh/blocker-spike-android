@@ -11,7 +11,7 @@ import kotlinx.coroutines.withContext
 /**
  * Le seul code de cette application qui ouvre une connexion.
  *
- * `HttpURLConnection` plutôt qu'une bibliothèque : deux points de
+ * `HttpURLConnection` plutôt qu'une bibliothèque : trois points de
  * terminaison, aucun besoin d'intercepteurs, de cache ou de pool. Une
  * dépendance HTTP apporterait ici une surface à auditer sans rien apporter
  * d'utile.
@@ -60,6 +60,45 @@ class HttpSyncTransport(
         } catch (error: IOException) {
             // Coupure réseau, DNS, TLS : tout cela se réessaie.
             QueueFetch.Failed(error.javaClass.simpleName, retryable = true)
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    override suspend fun fetchAgenda(
+        credentials: DeviceCredentials,
+        etag: String?,
+    ): AgendaFetch = withContext(dispatcher) {
+        val connection = open(credentials, "/api/v1/agenda")
+            ?: return@withContext AgendaFetch.Failed(
+                "Adresse de serveur inutilisable",
+                retryable = false,
+            )
+
+        try {
+            connection.requestMethod = "GET"
+            etag?.let { connection.setRequestProperty("If-None-Match", it) }
+
+            when (val status = connection.responseCode) {
+                HttpURLConnection.HTTP_OK -> {
+                    val body = connection.inputStream.bufferedReader().use { it.readText() }
+                    val snapshot = AgendaSnapshotJson.decode(body)
+                        ?: return@withContext AgendaFetch.Failed(
+                            "Réponse d'agenda illisible",
+                            retryable = true,
+                        )
+                    AgendaFetch.Fresh(
+                        snapshot = snapshot,
+                        etag = connection.getHeaderField("ETag"),
+                    )
+                }
+
+                HttpURLConnection.HTTP_NOT_MODIFIED -> AgendaFetch.NotModified
+                HttpURLConnection.HTTP_UNAUTHORIZED -> AgendaFetch.Unauthorized
+                else -> AgendaFetch.Failed("HTTP $status", retryable = status >= 500)
+            }
+        } catch (error: IOException) {
+            AgendaFetch.Failed(error.javaClass.simpleName, retryable = true)
         } finally {
             connection.disconnect()
         }
