@@ -6,10 +6,13 @@ import com.albugimed.blockerspike.capture.CaptureJson
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import javax.net.ssl.HttpsURLConnection
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Le seul code de cette application qui ouvre une connexion.
@@ -190,6 +193,89 @@ class HttpSyncTransport(
             }
         } catch (error: IOException) {
             CaptureDelivery.Failed(error.javaClass.simpleName, retryable = true)
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    override suspend fun fetchAgendaChanges(
+        credentials: DeviceCredentials,
+        since: String?,
+    ): AgendaDelta = withContext(dispatcher) {
+        // Le curseur passe en paramètre d'URL : c'est une heure serveur, pas un
+        // secret. Le jeton, lui, reste dans l'en-tête, comme partout ailleurs.
+        val query = since?.let { "?since=" + URLEncoder.encode(it, "UTF-8") }.orEmpty()
+        val connection = open(credentials, "/api/v1/agenda/sync$query")
+            ?: return@withContext AgendaDelta.Failed(
+                "Adresse de serveur inutilisable",
+                retryable = false,
+            )
+
+        try {
+            connection.requestMethod = "GET"
+
+            when (val status = connection.responseCode) {
+                HttpURLConnection.HTTP_OK -> {
+                    val body = connection.inputStream.bufferedReader().use { it.readText() }
+                    decodeAgendaDelta(body)
+                        ?: AgendaDelta.Failed("Réponse d'agenda illisible", retryable = true)
+                }
+
+                HttpURLConnection.HTTP_UNAUTHORIZED -> AgendaDelta.Unauthorized
+                else -> AgendaDelta.Failed("HTTP $status", retryable = status >= 500)
+            }
+        } catch (error: IOException) {
+            AgendaDelta.Failed(error.javaClass.simpleName, retryable = true)
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    override suspend fun sendAgendaChanges(
+        credentials: DeviceCredentials,
+        deviceId: String,
+        changes: List<AgendaEntry>,
+    ): AgendaDelivery = withContext(dispatcher) {
+        val connection = open(credentials, "/api/v1/agenda/sync")
+            ?: return@withContext AgendaDelivery.Failed(
+                "Adresse de serveur inutilisable",
+                retryable = false,
+            )
+
+        try {
+            connection.requestMethod = "POST"
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+
+            val payload = JSONObject().put("device_id", deviceId)
+            val array = JSONArray()
+            changes.forEach { array.put(AgendaEntryJson.encodeChange(it)) }
+            payload.put("changes", array)
+
+            val body = payload.toString().toByteArray(Charsets.UTF_8)
+            connection.setFixedLengthStreamingMode(body.size)
+            connection.outputStream.use { it.write(body) }
+
+            when (val status = connection.responseCode) {
+                HttpURLConnection.HTTP_OK -> {
+                    val answer = connection.inputStream.bufferedReader().use { it.readText() }
+                    val results = decodeAgendaResults(answer)
+                    if (results == null) {
+                        // Illisible n'est pas refusé : on garde tout et on
+                        // réessaiera. Le rejeu porte le même identifiant et le
+                        // même `edited_at`, il ne peut rien dupliquer.
+                        AgendaDelivery.Failed("Réponse de verdicts illisible", retryable = true)
+                    } else {
+                        AgendaDelivery.Answered(results)
+                    }
+                }
+
+                HttpURLConnection.HTTP_UNAUTHORIZED -> AgendaDelivery.Unauthorized
+                HttpURLConnection.HTTP_ENTITY_TOO_LARGE -> AgendaDelivery.TooLarge
+                else -> AgendaDelivery.Failed("HTTP $status", retryable = status >= 500)
+            }
+        } catch (error: IOException) {
+            AgendaDelivery.Failed(error.javaClass.simpleName, retryable = true)
         } finally {
             connection.disconnect()
         }

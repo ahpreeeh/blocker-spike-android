@@ -10,10 +10,12 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 /**
- * La file d'attente des captures — **une base à part, pas un magasin de plus.**
+ * Les captures — **une base à part, pas un magasin de plus.**
  *
  * Trois raisons, et la troisième est celle qui a décidé :
  *
@@ -27,6 +29,13 @@ import kotlinx.coroutines.flow.Flow
  *
  * `capture_id` est la clé primaire : un partage rejoué par erreur ne crée
  * pas deux lignes, ici comme sur le serveur.
+ *
+ * **Une capture confirmée n'est plus effacée** (version 2). Elle l'était, et
+ * c'était le pire defaut du partage : partager depuis une autre application
+ * marchait, la capture partait, puis disparaissait de l'appareil. Rien ne
+ * distinguait un partage reussi d'un partage qui n'avait jamais eu lieu. Le
+ * nom de la table reste `pending_captures` — le renommer coûterait une
+ * migration par recopie pour un mot invisible a l'usage.
  */
 @Entity(tableName = "pending_captures")
 data class PendingCaptureRow(
@@ -42,39 +51,75 @@ data class PendingCaptureRow(
      * disparaît pas : c'est la file morte, visible, du contrat §7.
      */
     val deadReason: String? = null,
+    /**
+     * Instant où le serveur a confirmé l'avoir reçue, `null` tant qu'elle
+     * attend. Ce que le téléphone sait s'arrête ici : **il ne sait pas si
+     * l'atelier l'a triée.** L'affichage ne doit donc jamais dire « traitée ».
+     */
+    val sentAtMillis: Long? = null,
 )
+
+/** Où en est une capture, du point de vue du téléphone et de lui seul. */
+enum class CaptureState { PENDING, SENT, REFUSED }
+
+val PendingCaptureRow.state: CaptureState
+    get() = when {
+        deadReason != null -> CaptureState.REFUSED
+        sentAtMillis != null -> CaptureState.SENT
+        else -> CaptureState.PENDING
+    }
 
 @Dao
 interface CaptureDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(row: PendingCaptureRow): Long
 
-    @Query("select * from pending_captures where deadReason is null order by capturedAtMillis asc limit :limit")
+    @Query(
+        "select * from pending_captures where deadReason is null and sentAtMillis is null " +
+            "order by capturedAtMillis asc limit :limit",
+    )
     suspend fun pending(limit: Int): List<PendingCaptureRow>
 
-    @Query("select count(*) from pending_captures where deadReason is null")
+    @Query("select count(*) from pending_captures where deadReason is null and sentAtMillis is null")
     fun pendingCount(): Flow<Int>
 
-    @Query("select * from pending_captures where deadReason is not null order by capturedAtMillis desc")
-    fun dead(): Flow<List<PendingCaptureRow>>
+    /**
+     * Tout, du plus récent au plus ancien.
+     *
+     * La borne n'est pas une purge : rien n'est effacé, on cesse seulement
+     * d'afficher au-delà. Une note ne disparaît que sur geste explicite.
+     */
+    @Query("select * from pending_captures order by capturedAtMillis desc limit :limit")
+    fun all(limit: Int): Flow<List<PendingCaptureRow>>
 
-    /** Retire ce que le serveur a accepté — ou déclaré déjà connu. */
-    @Query("delete from pending_captures where captureId in (:captureIds)")
-    suspend fun forget(captureIds: List<String>)
+    /** Le serveur a confirmé. La ligne reste, elle change d'état. */
+    @Query("update pending_captures set sentAtMillis = :sentAtMillis where captureId in (:captureIds)")
+    suspend fun markSent(captureIds: List<String>, sentAtMillis: Long)
 
     @Query("update pending_captures set deadReason = :reason where captureId = :captureId")
     suspend fun bury(captureId: String, reason: String)
 
-    /** Oubli d'**une** capture morte, sur geste explicite. Jamais en bloc. */
-    @Query("delete from pending_captures where captureId = :captureId and deadReason is not null")
-    suspend fun forgetDead(captureId: String)
+    /** Oubli d'**une** note, sur geste explicite. Jamais en bloc. */
+    @Query("delete from pending_captures where captureId = :captureId")
+    suspend fun forget(captureId: String)
 }
 
-@Database(entities = [PendingCaptureRow::class], version = 1, exportSchema = false)
+@Database(entities = [PendingCaptureRow::class], version = 2, exportSchema = false)
 abstract class CaptureDatabase : RoomDatabase() {
     abstract fun captures(): CaptureDao
 
     companion object {
+        /**
+         * Ajoute la colonne, ne touche a rien d'autre. Les captures deja
+         * envoyees avant cette version ont ete effacees a l'epoque : elles ne
+         * reviendront pas, et aucune valeur inventee ne les remplacera.
+         */
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("alter table pending_captures add column sentAtMillis integer")
+            }
+        }
+
         @Volatile
         private var instance: CaptureDatabase? = null
 
@@ -85,6 +130,7 @@ abstract class CaptureDatabase : RoomDatabase() {
                     CaptureDatabase::class.java,
                     "captures.db",
                 )
+                .addMigrations(MIGRATION_1_2)
                 // Pas de `fallbackToDestructiveMigration` : une migration
                 // manquante doit faire échouer l'ouverture, jamais effacer une
                 // capture que le serveur n'a pas encore vue.

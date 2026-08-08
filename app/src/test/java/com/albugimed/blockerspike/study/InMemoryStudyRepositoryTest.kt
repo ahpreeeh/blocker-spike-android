@@ -62,7 +62,7 @@ class InMemoryStudyRepositoryTest {
         assertEquals("1 en attente d'envoi", pendingLabel(1))
         assertEquals("1 rejeté", rejectedLabel(1))
         assertEquals("3 rejetés", rejectedLabel(3))
-        assertEquals("File à jour du —", cacheFreshnessLabel(null))
+        assertEquals("Liste à jour du —", cacheFreshnessLabel(null))
         assertEquals(
             "Adresse invalide : utilise une adresse HTTPS.",
             enrolmentMessage(EnrolOutcome.InvalidUrl),

@@ -76,6 +76,7 @@ class SyncEngine(
     private val credentialStore: DeviceCredentialStore,
     private val transport: SyncTransport,
     private val agendaCache: AgendaCache? = null,
+    private val agendaStore: AgendaStore? = null,
     private val timeSource: TimeSource = SystemTimeSource,
     private val logger: SyncLogger = SystemSyncLogger,
 ) {
@@ -124,6 +125,9 @@ class SyncEngine(
         credentialStore.clear()
         queueCache.clear()
         agendaCache?.clear()
+        // La copie modifiable part avec le reste : elle n'appartient pas à
+        // l'appareil, elle appartient au compte qu'on vient d'oublier.
+        agendaStore?.clear()
         _state.value = SyncState()
     }
 
@@ -141,6 +145,7 @@ class SyncEngine(
         // propre (contrat §15). Cet appel garde son ETag et reste sans effet
         // sur l'outbox en cas de panne.
         refreshAgenda(credentials) ?: return@withLock halt()
+        exchangeAgenda(credentials, deviceId) ?: return@withLock halt()
 
         val now = timeSource.nowMillis()
         val nextAttempt = _state.value.nextAttemptAtMillis
@@ -302,6 +307,112 @@ class SyncEngine(
         }
     }
 
+    /**
+     * L'échange à deux sens de l'agenda — amendement V1.4.
+     *
+     * Il monte d'abord, il descend ensuite, et l'ordre compte : descendre en
+     * premier ferait arbitrer les modifications locales contre une version du
+     * serveur qui ne les connaît pas encore, et une correction faite dans
+     * l'avion serait écrasée par ce qu'elle corrigeait.
+     *
+     * Il partage la règle du reste du fichier : **une saisie ne cesse
+     * d'attendre que lorsque le serveur a dit qu'il l'avait.** Une panne laisse
+     * donc tout en attente, et le prochain passage réessaie.
+     *
+     * `null` conserve la signification commune d'un jeton refusé.
+     */
+    private suspend fun exchangeAgenda(
+        credentials: DeviceCredentials,
+        deviceId: String,
+    ): Boolean? {
+        val store = agendaStore ?: return false
+        val state = store.current()
+        if (!state.storageHealthy) {
+            // Envoyer à l'aveugle risquerait de marquer comme parties des
+            // saisies qu'on n'a jamais lues.
+            logger.add(SyncLogger.TAG_ERROR, "Agenda local illisible : échange suspendu.")
+            return false
+        }
+
+        var remaining = state.pending
+        var batchSize = MAX_AGENDA_BATCH
+        while (remaining.isNotEmpty()) {
+            val batch = remaining.take(batchSize)
+            when (val delivery = transport.sendAgendaChanges(credentials, deviceId, batch)) {
+                is AgendaDelivery.Answered -> {
+                    val verdicts = delivery.results.associateBy { it.id }
+                    val settled = batch
+                        .filter { verdicts[it.id]?.isSettled == true }
+                        .mapTo(mutableSetOf()) { it.id }
+                    store.settle(settled)
+
+                    delivery.results.filter { it.isRejected }.forEach { verdict ->
+                        // Un refus de structure ne se réessaie pas : il
+                        // donnerait éternellement la même réponse. Il ne
+                        // disparaît pas non plus — l'entrée reste en attente et
+                        // l'écran la montre encore, avec ce motif au journal.
+                        logger.add(
+                            SyncLogger.TAG_ERROR,
+                            "Entrée d'agenda refusée (${verdict.id}) : " +
+                                (verdict.reason ?: "refus sans motif"),
+                        )
+                    }
+                    remaining = remaining.drop(batch.size)
+                }
+
+                AgendaDelivery.Unauthorized -> return null
+
+                AgendaDelivery.TooLarge -> {
+                    if (batchSize > 1) {
+                        batchSize = maxOf(1, batchSize / 2)
+                        continue
+                    }
+                    logger.add(
+                        SyncLogger.TAG_ERROR,
+                        "Entrée d'agenda trop volumineuse pour le serveur : envoi suspendu.",
+                    )
+                    return false
+                }
+
+                is AgendaDelivery.Failed -> {
+                    logger.add(SyncLogger.TAG_SYNC, "Agenda non envoyé : ${delivery.reason}")
+                    return false
+                }
+            }
+        }
+
+        var cursor = state.cursor
+        var pages = 0
+        while (pages < MAX_AGENDA_PAGES) {
+            when (val delta = transport.fetchAgendaChanges(credentials, cursor)) {
+                is AgendaDelta.Fresh -> {
+                    if (delta.skipped > 0) {
+                        logger.add(
+                            SyncLogger.TAG_ERROR,
+                            "${delta.skipped} entrée(s) d'agenda illisible(s) et ignorée(s).",
+                        )
+                    }
+                    store.applyRemote(delta.entries, delta.cursor)
+                    // Sans curseur qui avance, redemander donnerait la même
+                    // page indéfiniment : mieux vaut s'arrêter là et reprendre
+                    // au prochain passage.
+                    if (!delta.hasMore || delta.cursor == null || delta.cursor == cursor) break
+                    cursor = delta.cursor
+                    pages += 1
+                }
+
+                AgendaDelta.Unauthorized -> return null
+
+                is AgendaDelta.Failed -> {
+                    logger.add(SyncLogger.TAG_SYNC, "Agenda non descendu : ${delta.reason}")
+                    return false
+                }
+            }
+        }
+
+        return true
+    }
+
     private fun halt(): SyncOutcome {
         logger.add(
             SyncLogger.TAG_ERROR,
@@ -330,6 +441,17 @@ class SyncEngine(
     private companion object {
         /** Aligné sur la limite du serveur (contrat §5). */
         const val MAX_BATCH = 100
+
+        /** Aligné sur `MAX_AGENDA_CHANGES_PER_BATCH` du serveur. */
+        const val MAX_AGENDA_BATCH = 50
+
+        /**
+         * Bornes du balayage descendant. Un serveur qui rendrait sans cesse
+         * `has_more` ferait tourner la boucle sans fin ; ce plafond la coupe, et
+         * le curseur enregistré fait reprendre le passage suivant là où il en
+         * était.
+         */
+        const val MAX_AGENDA_PAGES = 20
         const val BASE_BACKOFF_MILLIS = 15_000L
         const val MAX_BACKOFF_MILLIS = 900_000L
         const val MAX_BACKOFF_SHIFT = 6

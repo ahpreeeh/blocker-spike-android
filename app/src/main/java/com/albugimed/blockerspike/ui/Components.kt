@@ -1,6 +1,7 @@
 package com.albugimed.blockerspike.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +25,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.albugimed.blockerspike.ui.theme.ActionShape
@@ -123,6 +128,9 @@ fun SurfaceCard(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
+        // 24 dp, et non le `medium` par defaut de Material : c'est le rayon de
+        // la conception, et c'est lui qui distingue une carte d'un rectangle.
+        shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -162,6 +170,36 @@ fun Fact(
         Text(
             value ?: "—",
             style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+/**
+ * Le chevron « il y a autre chose derriere ».
+ *
+ * Dessine, pas ecrit : le jeu d'icones de Material est une dependance a part
+ * (contrat §10), et le caractere « › » change de taille et d'epaisseur d'une
+ * police systeme a l'autre. Deux traits valent mieux qu'un glyphe emprunte.
+ */
+@Composable
+fun Chevron(
+    modifier: Modifier = Modifier,
+    tint: Color = LocalAlbugimedExtras.current.textMuted,
+) {
+    Canvas(modifier = modifier.size(18.dp)) {
+        val path = Path().apply {
+            moveTo(size.width * 0.38f, size.height * 0.26f)
+            lineTo(size.width * 0.64f, size.height * 0.5f)
+            lineTo(size.width * 0.38f, size.height * 0.74f)
+        }
+        drawPath(
+            path = path,
+            color = tint,
+            style = Stroke(
+                width = 1.6.dp.toPx(),
+                cap = StrokeCap.Round,
+                join = StrokeJoin.Round,
+            ),
         )
     }
 }

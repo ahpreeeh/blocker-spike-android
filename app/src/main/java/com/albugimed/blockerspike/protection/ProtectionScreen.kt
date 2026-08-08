@@ -35,9 +35,9 @@ import com.albugimed.blockerspike.ui.settings.formatTime
 import kotlinx.coroutines.launch
 
 /**
- * L'onglet Protection.
+ * La page Blocage, rangee derriere « Plus ».
  *
- * Il n'existait pas : ce que l'appareil refuse — la seule fonction dont
+ * Elle n'existait pas : ce que l'appareil refuse — la seule fonction dont
  * l'effet se manifeste **en dehors** de l'application — se reglait au fond de
  * l'ecran des reglages, entre les autorisations Android et le journal de
  * debogage. Le sortir de la est le changement de structure le plus important
@@ -64,7 +64,7 @@ fun ProtectionScreen() {
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // Pas de `ScreenHeader` ici : la carte porte deja le mot « Protection »
+        // Pas de `ScreenHeader` ici : la carte porte deja le mot « Blocage »
         // et dit l'etat en toutes lettres. Un titre au-dessus faisait lire deux
         // fois la meme chose, juste apres l'avoir lue sur l'accueil.
         item {

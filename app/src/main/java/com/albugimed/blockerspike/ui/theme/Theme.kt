@@ -15,69 +15,72 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 
 private val LightScheme = lightColorScheme(
-    primary = SaugeJour.Accent,
-    onPrimary = Color.White,
-    primaryContainer = SaugeJour.AccentMuted,
-    onPrimaryContainer = SaugeJour.TextPrimary,
-    secondary = SaugeJour.Success,
+    primary = ForetJour.Accent,
+    // Le citron clair, et non le blanc : c'est la pilule de la conception, et
+    // elle tient 6,9:1 sur le vert profond — mieux que le blanc n'y tiendrait
+    // sur n'importe quel vert assez clair pour paraitre amical.
+    onPrimary = Citron.Clair,
+    primaryContainer = ForetJour.AccentMuted,
+    onPrimaryContainer = ForetJour.TextPrimary,
+    secondary = ForetJour.Success,
     onSecondary = Color.White,
-    secondaryContainer = SaugeJour.SuccessMuted,
-    onSecondaryContainer = SaugeJour.TextPrimary,
-    tertiary = SaugeJour.Secondary,
+    secondaryContainer = ForetJour.SuccessMuted,
+    onSecondaryContainer = ForetJour.TextPrimary,
+    tertiary = ForetJour.Secondary,
     onTertiary = Color.White,
-    tertiaryContainer = SaugeJour.SecondaryMuted,
-    onTertiaryContainer = SaugeJour.TextPrimary,
-    background = SaugeJour.Page,
-    onBackground = SaugeJour.TextPrimary,
-    surface = SaugeJour.Card,
-    onSurface = SaugeJour.TextPrimary,
-    surfaceVariant = SaugeJour.Pill,
-    onSurfaceVariant = SaugeJour.TextSecondary,
-    surfaceContainerLowest = SaugeJour.Card,
-    surfaceContainerLow = SaugeJour.Card,
-    surfaceContainer = SaugeJour.Card,
-    surfaceContainerHigh = SaugeJour.ActiveNav,
-    surfaceContainerHighest = SaugeJour.Pill,
-    outline = SaugeJour.BorderActive,
-    outlineVariant = SaugeJour.Border,
-    error = SaugeJour.Danger,
+    tertiaryContainer = ForetJour.SecondaryMuted,
+    onTertiaryContainer = ForetJour.TextPrimary,
+    background = ForetJour.Page,
+    onBackground = ForetJour.TextPrimary,
+    surface = ForetJour.Card,
+    onSurface = ForetJour.TextPrimary,
+    surfaceVariant = ForetJour.Pill,
+    onSurfaceVariant = ForetJour.TextSecondary,
+    surfaceContainerLowest = ForetJour.Card,
+    surfaceContainerLow = ForetJour.Card,
+    surfaceContainer = ForetJour.Card,
+    surfaceContainerHigh = ForetJour.ActiveNav,
+    surfaceContainerHighest = ForetJour.Pill,
+    outline = ForetJour.BorderActive,
+    outlineVariant = ForetJour.Border,
+    error = ForetJour.Danger,
     onError = Color.White,
-    errorContainer = SaugeJour.DangerMuted,
-    onErrorContainer = SaugeJour.TextPrimary,
+    errorContainer = ForetJour.DangerMuted,
+    onErrorContainer = ForetJour.TextPrimary,
 )
 
 private val DarkScheme = darkColorScheme(
-    primary = SaugeNuit.Accent,
+    primary = ForetNuit.Accent,
     // L'accent nocturne est un citron clair : le texte qui se pose dessus doit
     // etre sombre, pas la couleur de page comme dans l'ancien theme indigo.
     onPrimary = Color(0xFF14231A),
-    primaryContainer = SaugeNuit.AccentMuted,
-    onPrimaryContainer = SaugeNuit.TextPrimary,
-    secondary = SaugeNuit.Success,
-    onSecondary = SaugeNuit.Page,
-    secondaryContainer = SaugeNuit.SuccessMuted,
-    onSecondaryContainer = SaugeNuit.TextPrimary,
-    tertiary = SaugeNuit.Secondary,
-    onTertiary = SaugeNuit.Page,
-    tertiaryContainer = SaugeNuit.SecondaryMuted,
-    onTertiaryContainer = SaugeNuit.TextPrimary,
-    background = SaugeNuit.Page,
-    onBackground = SaugeNuit.TextPrimary,
-    surface = SaugeNuit.Card,
-    onSurface = SaugeNuit.TextPrimary,
-    surfaceVariant = SaugeNuit.Pill,
-    onSurfaceVariant = SaugeNuit.TextSecondary,
-    surfaceContainerLowest = SaugeNuit.Page,
-    surfaceContainerLow = SaugeNuit.Card,
-    surfaceContainer = SaugeNuit.Card,
-    surfaceContainerHigh = SaugeNuit.ActiveNav,
-    surfaceContainerHighest = SaugeNuit.Pill,
-    outline = SaugeNuit.BorderActive,
-    outlineVariant = SaugeNuit.Border,
-    error = SaugeNuit.Danger,
-    onError = SaugeNuit.Page,
-    errorContainer = SaugeNuit.DangerMuted,
-    onErrorContainer = SaugeNuit.TextPrimary,
+    primaryContainer = ForetNuit.AccentMuted,
+    onPrimaryContainer = ForetNuit.TextPrimary,
+    secondary = ForetNuit.Success,
+    onSecondary = ForetNuit.Page,
+    secondaryContainer = ForetNuit.SuccessMuted,
+    onSecondaryContainer = ForetNuit.TextPrimary,
+    tertiary = ForetNuit.Secondary,
+    onTertiary = ForetNuit.Page,
+    tertiaryContainer = ForetNuit.SecondaryMuted,
+    onTertiaryContainer = ForetNuit.TextPrimary,
+    background = ForetNuit.Page,
+    onBackground = ForetNuit.TextPrimary,
+    surface = ForetNuit.Card,
+    onSurface = ForetNuit.TextPrimary,
+    surfaceVariant = ForetNuit.Pill,
+    onSurfaceVariant = ForetNuit.TextSecondary,
+    surfaceContainerLowest = ForetNuit.Page,
+    surfaceContainerLow = ForetNuit.Card,
+    surfaceContainer = ForetNuit.Card,
+    surfaceContainerHigh = ForetNuit.ActiveNav,
+    surfaceContainerHighest = ForetNuit.Pill,
+    outline = ForetNuit.BorderActive,
+    outlineVariant = ForetNuit.Border,
+    error = ForetNuit.Danger,
+    onError = ForetNuit.Page,
+    errorContainer = ForetNuit.DangerMuted,
+    onErrorContainer = ForetNuit.TextPrimary,
 )
 
 /**
@@ -89,6 +92,7 @@ private val DarkScheme = darkColorScheme(
 data class AlbugimedExtras(
     val textMuted: Color,
     val subjectHues: List<Color>,
+    val coverHues: List<Color>,
     val protectionActive: Color,
     val protectionPaused: Color,
     val protectionRing: Color,
@@ -115,11 +119,24 @@ data class AlbugimedExtras(
         val index = (label.hashCode().toLong() and 0xFFFFFFFFL) % subjectHues.size
         return subjectHues[index.toInt()]
     }
+
+    /**
+     * Couleur de couverture d'un document, derivee du meme libelle et par le
+     * meme calcul que [subjectHue] : deux documents de la meme matiere
+     * partagent leur couverture, et c'est le but — la couverture *dit* la
+     * matiere, elle n'est pas une decoration tiree au sort.
+     */
+    fun coverHue(label: String): Color {
+        if (coverHues.isEmpty()) return textMuted
+        val index = (label.hashCode().toLong() and 0xFFFFFFFFL) % coverHues.size
+        return coverHues[index.toInt()]
+    }
 }
 
 private val LightExtras = AlbugimedExtras(
-    textMuted = SaugeJour.TextMuted,
+    textMuted = ForetJour.TextMuted,
     subjectHues = SubjectHuesLight,
+    coverHues = CoverHues,
     protectionActive = Protection.ActiveJour,
     protectionPaused = Protection.PausedJour,
     protectionRing = Protection.PausedRing,
@@ -136,8 +153,9 @@ private val LightExtras = AlbugimedExtras(
 )
 
 private val DarkExtras = AlbugimedExtras(
-    textMuted = SaugeNuit.TextMuted,
+    textMuted = ForetNuit.TextMuted,
     subjectHues = SubjectHuesDark,
+    coverHues = CoverHues,
     protectionActive = Protection.ActiveNuit,
     protectionPaused = Protection.PausedNuit,
     protectionRing = Protection.PausedRing,
@@ -156,19 +174,24 @@ private val DarkExtras = AlbugimedExtras(
 val LocalAlbugimedExtras = staticCompositionLocalOf { LightExtras }
 
 /**
- * Rayons repris de la conception : 22 dp pour la carte de protection, 16 dp
- * pour les cartes ordinaires, 11 dp pour les boutons.
+ * Rayons repris de la conception : **24 dp** pour les cartes, 12 dp pour les
+ * boutons.
+ *
+ * Le saut de 16 a 24 n'est pas cosmetique. A 16 dp, une carte reste un
+ * rectangle a qui on a lime les angles ; a 24 elle devient une forme, et c'est
+ * cette rondeur-la — repetee sur chaque bloc, du haut de l'ecran au bas — qui
+ * porte l'essentiel de l'impression de douceur de la maquette.
  */
 private val AlbugimedShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(11.dp),
-    medium = RoundedCornerShape(14.dp),
-    large = RoundedCornerShape(16.dp),
-    extraLarge = RoundedCornerShape(22.dp),
+    extraSmall = RoundedCornerShape(10.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(28.dp),
 )
 
 /** Forme des boutons pleine largeur, la plus frequente de l'application. */
-val ActionShape: Shape = RoundedCornerShape(11.dp)
+val ActionShape: Shape = RoundedCornerShape(12.dp)
 
 /**
  * Le theme de l'application. Toutes les `setContent` passent par ici — un

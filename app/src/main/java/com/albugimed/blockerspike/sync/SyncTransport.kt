@@ -4,16 +4,21 @@ import com.albugimed.blockerspike.capture.Capture
 import com.albugimed.blockerspike.capture.CaptureDelivery
 
 /**
- * Toute la surface réseau de l'application, en quatre méthodes.
+ * Toute la surface réseau de l'application, en six méthodes.
  *
  * L'interface est étroite exprès. Le §10 du contrat impose de pouvoir dire,
  * à tout moment et sans lire tout le code, **ce que l'application envoie et
- * à qui**. Quatre points de terminaison, un hôte, aucun autre appel : ce
+ * à qui**. Six points de terminaison, un hôte, aucun autre appel : ce
  * fichier est la preuve, et son étroitesse est la garantie.
  *
  * `sendCaptures` a rejoint la liste en V2.1. Elle n'est pas appelée par le
  * moteur d'études mais par `CaptureUploadWorker` : deux files, deux
  * calendriers d'envoi, aucune capture ne peut retarder une trace.
+ *
+ * `fetchAgendaChanges` et `sendAgendaChanges` ont rejoint la liste en V1.4.
+ * Elles partagent un seul chemin, `/api/v1/agenda/sync`, et ne remplacent pas
+ * `fetchAgenda` : celui-ci descend l'instantané **calculé** par le serveur,
+ * celles-là la matière brute, dans les deux sens.
  */
 interface SyncTransport {
     suspend fun fetchQueue(credentials: DeviceCredentials, etag: String?): QueueFetch
@@ -31,6 +36,54 @@ interface SyncTransport {
         deviceId: String,
         captures: List<Capture>,
     ): CaptureDelivery
+
+    /** `since` est une heure **serveur**, jamais celle du téléphone. */
+    suspend fun fetchAgendaChanges(
+        credentials: DeviceCredentials,
+        since: String?,
+    ): AgendaDelta
+
+    suspend fun sendAgendaChanges(
+        credentials: DeviceCredentials,
+        deviceId: String,
+        changes: List<AgendaEntry>,
+    ): AgendaDelivery
+}
+
+sealed interface AgendaDelta {
+    data class Fresh(
+        val entries: List<AgendaEntry>,
+        /** Point de reprise du prochain balayage. */
+        val cursor: String?,
+        val hasMore: Boolean,
+        /** Entrées reçues mais inexploitables. Comptées, jamais tues. */
+        val skipped: Int,
+    ) : AgendaDelta
+
+    data object Unauthorized : AgendaDelta
+    data class Failed(val reason: String, val retryable: Boolean) : AgendaDelta
+}
+
+data class AgendaChangeResult(val id: String, val status: String, val reason: String?) {
+    /**
+     * `superseded` est un **succès**, au même titre que `duplicate` pour une
+     * trace : le serveur a bien reçu le changement, il l'a simplement jugé plus
+     * ancien que ce qu'il détenait. Le renvoyer donnerait éternellement la même
+     * réponse.
+     */
+    val isSettled: Boolean get() = status == "accepted" || status == "superseded"
+    val isRejected: Boolean get() = status == "rejected"
+}
+
+sealed interface AgendaDelivery {
+    data class Answered(val results: List<AgendaChangeResult>) : AgendaDelivery
+
+    data object Unauthorized : AgendaDelivery
+
+    /** Le lot est trop volumineux : le couper en deux, ne rien abandonner. */
+    data object TooLarge : AgendaDelivery
+
+    data class Failed(val reason: String, val retryable: Boolean) : AgendaDelivery
 }
 
 sealed interface AgendaFetch {

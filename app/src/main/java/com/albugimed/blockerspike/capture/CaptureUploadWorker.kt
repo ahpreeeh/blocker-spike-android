@@ -43,7 +43,7 @@ class CaptureUploadWorker(
         return when (val delivery = Graph.captureTransport.sendCaptures(credentials, deviceId, pending)) {
             is CaptureDelivery.Answered -> {
                 val settled = delivery.results.filter { it.isSettled }.map { it.captureId }
-                outbox.forget(settled)
+                outbox.markSent(settled, System.currentTimeMillis())
                 for (rejected in delivery.results.filter { it.isRejected }) {
                     outbox.bury(rejected.captureId, rejected.reason ?: "refusée sans motif")
                 }

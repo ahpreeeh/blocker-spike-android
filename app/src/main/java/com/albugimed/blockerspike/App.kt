@@ -12,8 +12,10 @@ import com.albugimed.blockerspike.inference.InferenceClient
 import com.albugimed.blockerspike.inference.PolicyEnforcer
 import com.albugimed.blockerspike.inference.UnlockRequestCoordinator
 import com.albugimed.blockerspike.policy.BlockPolicyRepository
+import com.albugimed.blockerspike.reader.LibraryRepository
 import com.albugimed.blockerspike.reader.ReadingPositionRepository
 import com.albugimed.blockerspike.sync.AgendaCacheRepository
+import com.albugimed.blockerspike.sync.AgendaStoreRepository
 import com.albugimed.blockerspike.sync.HttpSyncTransport
 import com.albugimed.blockerspike.sync.KeystoreCredentialStore
 import com.albugimed.blockerspike.sync.QueueCacheRepository
@@ -79,6 +81,13 @@ object Graph {
         private set
     lateinit var agendaCache: AgendaCacheRepository
         private set
+
+    /**
+     * La copie modifiable de l'agenda — V1.4. Magasin distinct de
+     * `agendaCache`, qui ne detient que l'instantane calcule par le serveur.
+     */
+    lateinit var agendaStore: AgendaStoreRepository
+        private set
     lateinit var syncEngine: SyncEngine
         private set
     /** Magasin prive distinct de `block_policy`; aucun consommateur metier en V1.3. */
@@ -104,6 +113,14 @@ object Graph {
      * serveur ne l'apprend qu'au moment ou elle est declaree.
      */
     lateinit var readingPositions: ReadingPositionRepository
+        private set
+
+    /**
+     * Bibliotheque — V2.3. Sixieme magasin, et le second qui ne part jamais sur
+     * le reseau : ce que l'on range dit ce que l'on etudie, et le §8 du contrat
+     * exclut toute statistique d'usage.
+     */
+    lateinit var library: LibraryRepository
         private set
 
     /**
@@ -138,8 +155,10 @@ object Graph {
         captureCredentials = KeystoreCredentialStore(context.applicationContext)
         captureTransport = HttpSyncTransport()
         readingPositions = ReadingPositionRepository(context.applicationContext)
+        library = LibraryRepository(context.applicationContext)
         queueCache = QueueCacheRepository(context.applicationContext)
         agendaCache = AgendaCacheRepository(context.applicationContext)
+        agendaStore = AgendaStoreRepository(context.applicationContext)
         blockGuideRepository = BlockGuideRepository(context.applicationContext)
         syncEngine = SyncEngine(
             outbox = studyOutbox,
@@ -147,6 +166,7 @@ object Graph {
             credentialStore = captureCredentials,
             transport = captureTransport,
             agendaCache = agendaCache,
+            agendaStore = agendaStore,
         )
     }
 

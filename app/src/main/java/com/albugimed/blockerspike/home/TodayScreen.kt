@@ -1,39 +1,52 @@
 package com.albugimed.blockerspike.home
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.albugimed.blockerspike.Graph
 import com.albugimed.blockerspike.policy.PolicyState
+import com.albugimed.blockerspike.reader.ReaderActivity
 import com.albugimed.blockerspike.reader.ReadingPosition
 import com.albugimed.blockerspike.study.AgendaRowBlock
 import com.albugimed.blockerspike.study.AgendaState
+import com.albugimed.blockerspike.study.StepRow
+import com.albugimed.blockerspike.study.StepSheet
 import com.albugimed.blockerspike.study.StudyQueueState
 import com.albugimed.blockerspike.study.StudyRepository
 import com.albugimed.blockerspike.study.buildAgendaHeaderPresentation
-import com.albugimed.blockerspike.study.displayKindLabel
-import com.albugimed.blockerspike.study.lastWorkDisplayLabel
 import com.albugimed.blockerspike.study.pendingLabel
-import com.albugimed.blockerspike.study.resumeButtonLabel
 import com.albugimed.blockerspike.sync.QueueItem
 import com.albugimed.blockerspike.sync.SyncState
+import com.albugimed.blockerspike.ui.AppIcon
+import com.albugimed.blockerspike.ui.Glyph
 import com.albugimed.blockerspike.ui.Kicker
 import com.albugimed.blockerspike.ui.Notice
 import com.albugimed.blockerspike.ui.NoticeTone
@@ -42,29 +55,35 @@ import com.albugimed.blockerspike.ui.ProtectionCard
 import com.albugimed.blockerspike.ui.ScreenHeader
 import com.albugimed.blockerspike.ui.SecondaryAction
 import com.albugimed.blockerspike.ui.Section
-import com.albugimed.blockerspike.ui.SubjectDot
+import com.albugimed.blockerspike.ui.SurfaceCard
 import com.albugimed.blockerspike.ui.mutedColor
-import com.albugimed.blockerspike.ui.theme.ActionShape
+import com.albugimed.blockerspike.ui.theme.LocalAlbugimedExtras
 import kotlinx.coroutines.launch
 
 /**
  * L'accueil, refait sur ce que le brouillon demande.
  *
- * Quatre choses, dans cet ordre : **l'etat de la protection**, **ce qui doit
- * etre fait maintenant**, le **prochain verrou**, les **48 heures**. Rien
- * d'autre — c'est un ecran qu'on regarde debout, pas un tableau de bord.
+ * Quatre choses, dans cet ordre : **l'etat du blocage**, **ce qu'il y a a
+ * faire**, la **prochaine echeance**, les **48 heures**. Rien d'autre — c'est
+ * un ecran qu'on regarde debout, pas un tableau de bord.
  *
- * La protection passe en premier parce que c'est la seule chose ici dont
- * l'effet se produit **en dehors** de l'application : tout le reste est une
- * lecture de ce que l'atelier a decide ailleurs. La capture, elle, tient dans
- * l'en-tete : elle sert quelques secondes, pas au terme d'un defilement — et
- * un bouton flottant se posait par-dessus les cartes, masquant du texte en
- * plein milieu de la liste.
+ * Le blocage passe en premier parce que c'est la seule chose ici dont l'effet
+ * se produit **en dehors** de l'application : tout le reste est une lecture de
+ * ce que l'atelier a decide ailleurs. La capture, elle, tient dans l'en-tete :
+ * elle sert quelques secondes, pas au terme d'un defilement — et un bouton
+ * flottant se posait par-dessus les cartes, masquant du texte en plein milieu
+ * de la liste.
  *
- * Ce qui n'y est pas, et n'y sera pas : un tri par urgence. L'action en cours
- * est simplement **le premier element de la file**, dans l'ordre que
- * l'utilisateur a lui-meme donne (P4-02). L'application ne choisit pas a sa
- * place, elle se contente de ne pas lui faire chercher.
+ * Le travail se presente en **liste**, plus en fiche. La version precedente
+ * ouvrait l'accueil sur une seule etape detaillee, avec ses deux faits
+ * etiquetes et ses trois boutons : elle repondait « par quoi je commence » mais
+ * cachait tout le reste, et il fallait changer d'onglet pour savoir ce qui
+ * suivait. Quatre lignes tiennent dans la meme hauteur et disent la meme chose
+ * plus une : **ou j'en suis dans ma liste**.
+ *
+ * Ce qui n'y est pas, et n'y sera pas : un tri par urgence. L'ordre affiche est
+ * celui que l'utilisateur a lui-meme donne dans l'atelier (P4-02). L'application
+ * ne choisit pas a sa place, elle se contente de ne pas lui faire chercher.
  */
 @Composable
 fun TodayScreen(
@@ -72,11 +91,12 @@ fun TodayScreen(
     positions: Map<String, ReadingPosition>,
     onOpenQueue: () -> Unit,
     onOpenAgenda: () -> Unit,
-    onOpenProtection: () -> Unit,
-    onOpenCapture: () -> Unit,
+    onOpenBlocking: () -> Unit,
+    onOpenReadings: () -> Unit,
     onDeclare: (QueueItem) -> Unit,
     onResume: (QueueItem) -> Unit,
 ) {
+    val context = LocalContext.current
     val policyRepo = Graph.policyRepository
     val policy by policyRepo.policy.collectAsStateWithLifecycle(initialValue = PolicyState())
     val scope = rememberCoroutineScope()
@@ -97,47 +117,65 @@ fun TodayScreen(
     }
 
     val agenda = buildAgendaHeaderPresentation(agendaState)
-    val current = queueState.items.firstOrNull()
+
+    // Le plus recemment ouvert. C'est un fait de position, pas un jugement sur
+    // ce qu'il faudrait lire — l'application continue de n'avoir aucun avis
+    // sur l'ordre (cadrage §1.1).
+    val lastReading = remember(positions) {
+        positions.values.maxByOrNull { it.updatedAtMillis }
+    }
+
+    // L'identifiant plutot que l'objet : la file se rafraichit sous la feuille
+    // ouverte, et c'est la version rechargee qu'il faut afficher.
+    var openStepId by rememberSaveable { mutableStateOf<String?>(null) }
+    val openStep = queueState.items.firstOrNull { it.stepId == openStepId }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item {
-            ScreenHeader(
-                title = "Aujourd'hui",
-                trailing = {
-                    Button(
-                        onClick = onOpenCapture,
-                        shape = ActionShape,
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                        ),
-                    ) {
-                        Text("Noter vite", style = MaterialTheme.typography.labelLarge)
-                    }
-                },
-            )
-        }
+        item { ScreenHeader(title = "Aujourd'hui") }
 
         item {
             ProtectionCard(
                 blockedCount = policy.blockedPackages.size,
                 failsafeOverride = policy.failsafeOverride,
                 storageHealthy = policy.storageHealthy,
-                onOpenProtection = onOpenProtection,
+                onOpenProtection = onOpenBlocking,
                 onSuspend = { scope.launch { policyRepo.setFailsafeOverride(true) } },
                 onRestore = { scope.launch { policyRepo.setFailsafeOverride(false) } },
             )
         }
 
+        // Le document le plus recemment ouvert, et rien d'autre. Une pile de
+        // « reprises » possibles serait une deuxieme liste a trancher, alors
+        // que la question posee ici n'en a qu'une : reprendre ou pas.
+        lastReading?.let { position ->
+            item {
+                ContinueReadingCard(
+                    position = position,
+                    onResume = {
+                        context.startActivity(
+                            ReaderActivity.intent(
+                                context = context,
+                                resourceId = position.resourceId,
+                                resourceLabel = position.documentLabel,
+                                // Aucune etape visee : on reprend une lecture,
+                                // on ne declare pas un travail.
+                                stepId = null,
+                            ),
+                        )
+                    },
+                    onOpenAll = onOpenReadings,
+                )
+            }
+        }
+
         if (!syncState.enrolled || syncState.halted) {
             item {
                 Notice(
-                    "Cet appareil n'est pas relié à l'atelier. La file et l'agenda " +
+                    "Cet appareil n'est pas relié à l'atelier. La liste et l'agenda " +
                         "resteront vides tant que l'enrôlement n'est pas fait.",
                     tone = NoticeTone.PROBLEM,
                 )
@@ -148,61 +186,53 @@ fun TodayScreen(
         }
 
         item {
-            Section(
-                title = current?.label ?: "Rien dans la file",
-                kicker = "À faire maintenant",
-            ) {
-                if (current == null) {
+            Section(title = "Dans ton ordre", kicker = "À faire") {
+                if (queueState.items.isEmpty()) {
                     Text(
-                        "La file en cache est vide. Choisis dans l'atelier ce que tu veux " +
+                        "La liste en cache est vide. Choisis dans l'atelier ce que tu veux " +
                             "travailler ensuite.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = mutedColor,
                     )
+                    SecondaryAction(text = "Voir la liste", onClick = onOpenQueue)
                 } else {
-                    val position = current.resource?.let { positions[it.resourceId] }
-                    CurrentStepDetails(item = current, position = position)
-                    if (current.resource != null) {
-                        // Le lecteur d'abord : reprendre a la page ou l'on
-                        // s'est arrete est la seule chose qu'aucune autre
-                        // application ne sait faire ici.
-                        PrimaryAction(
-                            text = resumeButtonLabel(position),
-                            onClick = { onResume(current) },
-                        )
-                        SecondaryAction(
-                            text = "Déclarer ce travail",
-                            onClick = { onDeclare(current) },
-                        )
-                    } else {
-                        PrimaryAction(
-                            text = "Déclarer ce travail",
-                            onClick = { onDeclare(current) },
-                        )
+                    queueState.items.take(STEP_PREVIEW).forEachIndexed { index, item ->
+                        if (index > 0) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        }
+                        StepRow(item = item, onOpen = { openStepId = item.stepId })
                     }
+                    SecondaryAction(
+                        text = if (queueState.items.size > STEP_PREVIEW) {
+                            "Voir les ${queueState.items.size} étapes"
+                        } else {
+                            "Voir toute la liste"
+                        },
+                        onClick = onOpenQueue,
+                    )
                 }
-                SecondaryAction(text = "Voir toute la file", onClick = onOpenQueue)
             }
         }
 
         if (queueState.pendingCount > 0) {
             item {
-                Notice("${pendingLabel(queueState.pendingCount)} — la file les renverra seule.")
+                Notice("${pendingLabel(queueState.pendingCount)} — la liste les renverra seule.")
             }
         }
 
         item {
-            Section(title = "Prochain verrou", kicker = "Agenda") {
+            Section(title = "Prochaine échéance", kicker = "Agenda") {
                 val nextLock = agenda.nextLock
                 if (nextLock == null) {
                     Text(
-                        "Aucun verrou connu.",
+                        "Aucune échéance connue.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = mutedColor,
                     )
                 } else {
                     AgendaRowBlock(nextLock)
                 }
+                SecondaryAction(text = "Ouvrir l'agenda", onClick = onOpenAgenda)
             }
         }
 
@@ -237,59 +267,119 @@ fun TodayScreen(
         }
 
     }
+
+    openStep?.let { step ->
+        StepSheet(
+            item = step,
+            position = step.resource?.let { positions[it.resourceId] },
+            onDismiss = { openStepId = null },
+            onResume = {
+                openStepId = null
+                onResume(step)
+            },
+            onDeclare = {
+                openStepId = null
+                onDeclare(step)
+            },
+        )
+    }
 }
 
-private const val WINDOW_PREVIEW = 3
-
+/**
+ * « Continuer a lire » : la carte que la conception place juste sous le
+ * blocage, et qui manquait completement ici.
+ *
+ * Elle affiche **la page, pas un pourcentage**. La maquette annonce « 36 %
+ * lus » en gros ; le cadrage §1 interdit de resumer une progression a un
+ * nombre unique, et pour une bonne raison — 36 % d'un polycopie n'est pas 36 %
+ * du travail, et l'ecart entre les deux est exactement ce que l'application ne
+ * doit pas laisser croire. La barre reste, parce qu'elle dit *ou l'on est dans
+ * un document* et rien de plus ; le chiffre qui l'accompagne est un numero de
+ * page, verifiable a l'oeil sur le document lui-meme.
+ */
 @Composable
-private fun CurrentStepDetails(item: QueueItem, position: ReadingPosition?) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun ContinueReadingCard(
+    position: ReadingPosition,
+    onResume: () -> Unit,
+    onOpenAll: () -> Unit,
+) {
+    val label = position.documentLabel.ifBlank { "Document sans nom" }
+    SurfaceCard {
+        Kicker("Continuer à lire")
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            SubjectDot(item.subject.label)
-            Text(
-                item.subject.label,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                item.kind.displayKindLabel(),
-                style = MaterialTheme.typography.bodySmall,
-                color = mutedColor,
-            )
-        }
-        item.resource?.let { resource ->
-            Text(
-                resource.label,
-                style = MaterialTheme.typography.bodySmall,
-                color = mutedColor,
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column {
-                Kicker("Fraîcheur")
-                Text(
-                    item.signals.freshnessDays?.let { "$it j" } ?: "—",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+            // La couverture coloree de la conception, reduite a la vignette
+            // qu'un telephone peut se permettre. La couleur vient du libelle :
+            // deux documents de la meme matiere se ressemblent, et c'est le but.
+            Box(
+                modifier = Modifier
+                    .size(width = 52.dp, height = 68.dp)
+                    .background(
+                        LocalAlbugimedExtras.current.coverHue(label),
+                        RoundedCornerShape(10.dp),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Glyph(AppIcon.FILE, size = 22.dp, tint = Color.White)
             }
-            item.signals.lastWork?.let { lastWork ->
-                Column {
-                    Kicker("Dernier travail")
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (position.pageCount > 0) {
+                    ReadingBar(position.page, position.pageCount)
                     Text(
-                        lastWorkDisplayLabel(lastWork, item.resource),
-                        style = MaterialTheme.typography.bodyMedium,
+                        "page ${position.page} sur ${position.pageCount}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = mutedColor,
+                    )
+                } else {
+                    Text(
+                        "page ${position.page}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = mutedColor,
                     )
                 }
             }
         }
-        if (position != null && position.pageCount > 0) {
-            Text(
-                "Signet posé page ${position.page} sur ${position.pageCount}.",
-                style = MaterialTheme.typography.bodySmall,
-                color = mutedColor,
-            )
-        }
+        PrimaryAction(text = "Reprendre", onClick = onResume)
+        SecondaryAction(text = "Toutes les lectures", onClick = onOpenAll)
     }
 }
+
+/** Ou l'on en est dans un document. Cinq points de haut, comme la conception. */
+@Composable
+private fun ReadingBar(page: Int, pageCount: Int) {
+    val fraction = (page.toFloat() / pageCount.toFloat()).coerceIn(0f, 1f)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(5.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant, CircleShape),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(fraction)
+                .height(5.dp)
+                .background(MaterialTheme.colorScheme.primary, CircleShape),
+        )
+    }
+}
+
+private const val WINDOW_PREVIEW = 3
+
+/**
+ * Combien d'etapes l'accueil montre avant de renvoyer a l'onglet.
+ *
+ * Quatre : au-dela, la carte pousse l'agenda hors de l'ecran, et l'accueil
+ * redevient ce qu'il ne doit pas etre — une deuxieme liste complete.
+ */
+private const val STEP_PREVIEW = 4

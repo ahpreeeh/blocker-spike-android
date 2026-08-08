@@ -103,6 +103,23 @@ class AgendaSyncTest {
             deviceId: String,
             captures: List<Capture>,
         ): CaptureDelivery = error("le moteur d'études n'envoie pas de captures")
+
+        /**
+         * L'échange à deux sens de l'agenda (V1.4) n'a pas de magasin local
+         * dans ce montage : le moteur ne doit donc jamais l'appeler, et cette
+         * doublure échoue bruyamment si c'était le cas.
+         */
+        override suspend fun fetchAgendaChanges(
+            credentials: DeviceCredentials,
+            since: String?,
+        ): AgendaDelta = error("aucun magasin d'agenda dans ce montage")
+
+        override suspend fun sendAgendaChanges(
+            credentials: DeviceCredentials,
+            deviceId: String,
+            changes: List<AgendaEntry>,
+        ): AgendaDelivery = error("aucun magasin d'agenda dans ce montage")
+
     }
 
     @Test

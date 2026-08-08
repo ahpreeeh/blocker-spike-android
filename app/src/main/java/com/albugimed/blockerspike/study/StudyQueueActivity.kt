@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
@@ -28,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,15 +40,12 @@ import com.albugimed.blockerspike.reader.ReadingPosition
 import com.albugimed.blockerspike.sync.EnrolOutcome
 import com.albugimed.blockerspike.sync.QueueItem
 import com.albugimed.blockerspike.sync.SyncState
-import com.albugimed.blockerspike.ui.Fact
-import com.albugimed.blockerspike.ui.Kicker
 import com.albugimed.blockerspike.ui.Notice
 import com.albugimed.blockerspike.ui.NoticeTone
 import com.albugimed.blockerspike.ui.PrimaryAction
 import com.albugimed.blockerspike.ui.ScreenHeader
 import com.albugimed.blockerspike.ui.SecondaryAction
 import com.albugimed.blockerspike.ui.Section
-import com.albugimed.blockerspike.ui.SubjectDot
 import com.albugimed.blockerspike.ui.SurfaceCard
 import com.albugimed.blockerspike.ui.mutedColor
 import com.albugimed.blockerspike.ui.theme.AlbugimedTheme
@@ -137,9 +134,16 @@ internal fun StudyQueueScreen(
     var operationError by remember { mutableStateOf<String?>(null) }
     var retrying by remember { mutableStateOf(false) }
 
+    // L'identifiant plutot que l'objet : la liste se rafraichit sous la feuille
+    // ouverte, et c'est la version rechargee qu'il faut afficher.
+    var openStepId by rememberSaveable { mutableStateOf<String?>(null) }
+    val openStep = state.items.firstOrNull { it.stepId == openStepId }
+
     LaunchedEffect(repository) {
         runCatching { repository.onQueueOpened() }
-            .onFailure { operationError = "Actualisation impossible. La file en cache reste utilisable." }
+            .onFailure {
+                operationError = "Actualisation impossible. La liste en cache reste utilisable."
+            }
     }
 
     if (!syncState.enrolled || syncState.halted) {
@@ -158,7 +162,7 @@ internal fun StudyQueueScreen(
     ) {
         item {
             ScreenHeader(
-                title = "File",
+                title = "À faire",
                 subtitle = "Dans l'ordre que tu as donné. L'application ne le change pas.",
             )
         }
@@ -193,22 +197,43 @@ internal fun StudyQueueScreen(
         if (state.items.isEmpty()) {
             item {
                 Text(
-                    "La file en cache est vide. Choisis dans l'atelier ce que tu veux " +
+                    "La liste en cache est vide. Choisis dans l'atelier ce que tu veux " +
                         "travailler ensuite.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = mutedColor,
                 )
             }
         } else {
-            items(items = state.items, key = QueueItem::stepId) { item ->
-                QueueItemCard(
-                    item = item,
-                    onDeclare = { onDeclare(item) },
-                    position = item.resource?.let { positions[it.resourceId] },
-                    onResume = { onResume(item) },
-                )
+            // Une carte, des rangs — et non une carte par etape. Chaque etape
+            // occupait un ecran entier de defilement : on ne voyait jamais sa
+            // liste, seulement le morceau sous le pouce.
+            item {
+                SurfaceCard {
+                    state.items.forEachIndexed { index, item ->
+                        if (index > 0) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        }
+                        StepRow(item = item, onOpen = { openStepId = item.stepId })
+                    }
+                }
             }
         }
+    }
+
+    openStep?.let { step ->
+        StepSheet(
+            item = step,
+            position = step.resource?.let { positions[it.resourceId] },
+            onDismiss = { openStepId = null },
+            onResume = {
+                openStepId = null
+                onResume(step)
+            },
+            onDeclare = {
+                openStepId = null
+                onDeclare(step)
+            },
+        )
     }
 }
 
@@ -231,7 +256,7 @@ private fun EnrolmentScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         ScreenHeader(
-            title = "File",
+            title = "À faire",
             subtitle = "Cet appareil n'est pas encore relié à l'atelier.",
         )
         if (syncState.halted) {
@@ -364,66 +389,6 @@ private fun QueueStatusCard(
 }
 
 /**
- * Une etape de la file.
- *
- * La carte n'est plus cliquable dans son ensemble : une zone qui declare un
- * travail sans le dire est exactement ce qui rendait l'ecran illisible. Les
- * deux gestes possibles sont ecrits, et l'ordre dit lequel est le geste
- * courant — on ouvre le document, on declare ensuite.
- *
- * Aucun tri, aucun badge, aucune couleur d'alerte : la pastille identifie la
- * matiere, les signaux restent des faits neutres (cadrage §1.1).
- */
-@Composable
-private fun QueueItemCard(
-    item: QueueItem,
-    onDeclare: () -> Unit,
-    position: ReadingPosition? = null,
-    onResume: () -> Unit = {},
-) {
-    SurfaceCard {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            SubjectDot(item.subject.label)
-            Text(
-                item.subject.label,
-                style = MaterialTheme.typography.bodySmall,
-                color = mutedColor,
-                modifier = Modifier.weight(1f),
-            )
-            Kicker(item.kind.displayKindLabel())
-        }
-        Text(item.label, style = MaterialTheme.typography.titleMedium)
-        item.resource?.let { resource ->
-            Text(
-                resource.label,
-                style = MaterialTheme.typography.bodySmall,
-                color = mutedColor,
-            )
-        }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        Fact("Fraîcheur", item.signals.freshnessDays?.let { "$it j" })
-        Fact(
-            "Dernier travail",
-            item.signals.lastWork?.let { lastWorkDisplayLabel(it, item.resource) },
-        )
-        // V2.2 : le bouton existe des qu'il y a une ressource, sinon
-        // rien ne permettrait de rattacher un document la premiere fois.
-        // C'est le MOT qui change, et seulement quand la promesse peut
-        // etre tenue : sans document, rien ne ramene a la page, et
-        // afficher "Reprendre" serait mentir.
-        if (item.resource != null) {
-            PrimaryAction(text = resumeButtonLabel(position), onClick = onResume)
-            SecondaryAction(text = "Déclarer ce travail", onClick = onDeclare)
-        } else {
-            PrimaryAction(text = "Déclarer ce travail", onClick = onDeclare)
-        }
-    }
-}
-
-/**
  * Le libelle du bouton du lecteur.
  *
  * Sans document rattache il dit ce qu'il va falloir faire, et surtout PAS
@@ -438,12 +403,12 @@ internal fun resumeButtonLabel(position: ReadingPosition?): String = when {
 }
 
 internal fun cacheFreshnessLabel(cachedAtMillis: Long?): String {
-    if (cachedAtMillis == null) return "File à jour du —"
+    if (cachedAtMillis == null) return "Liste à jour du —"
     val formatter = DateTimeFormatter
         .ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
         .withLocale(Locale.FRENCH)
     val cachedAt = Instant.ofEpochMilli(cachedAtMillis).atZone(ZoneId.systemDefault())
-    return "File à jour du ${formatter.format(cachedAt)}"
+    return "Liste à jour du ${formatter.format(cachedAt)}"
 }
 
 internal fun pendingLabel(count: Int): String = "$count en attente d'envoi"

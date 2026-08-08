@@ -3,10 +3,15 @@ package com.albugimed.blockerspike.ui.settings
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
@@ -19,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -38,6 +44,8 @@ import com.albugimed.blockerspike.guide.blockGuidePreview
 import com.albugimed.blockerspike.guide.displayText
 import com.albugimed.blockerspike.guide.formatGuideImportDate
 import com.albugimed.blockerspike.policy.PolicyState
+import com.albugimed.blockerspike.ui.AppDestination
+import com.albugimed.blockerspike.ui.Chevron
 import com.albugimed.blockerspike.ui.DiagnosticRow
 import com.albugimed.blockerspike.ui.Fact
 import com.albugimed.blockerspike.ui.Notice
@@ -52,16 +60,22 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Les reglages, et rien d'autre.
+ * Le hall : les pages qu'on ouvre rarement, puis ce qui se regle.
  *
  * L'ecran d'accueil precedent melangeait la file d'etudes, les autorisations
  * Android, le journal de debogage et les leviers d'experimentation dans une
  * seule colonne de neuf cartes. Le decoupage tient a une question simple :
  * **est-ce que je viens ici pour regler quelque chose, ou pour observer ?**
  * Ce qui sert a observer est parti dans [InstrumentsScreen].
+ *
+ * L'ecran portait aussi, un temps, une liste de portes vers Blocage, Notes et
+ * Lectures. Le tiroir les montre desormais toutes en meme temps : garder le
+ * hall reviendrait a demander deux fois le meme chemin, et a laisser croire
+ * que ces pages appartiennent aux reglages alors qu'elles n'y ont jamais
+ * appartenu.
  */
 @Composable
-fun SettingsScreen(onOpenInstruments: () -> Unit) {
+fun SettingsScreen(onOpen: (AppDestination) -> Unit) {
     val context = LocalContext.current
     val repo = Graph.policyRepository
     val policy by repo.policy.collectAsStateWithLifecycle(initialValue = PolicyState())
@@ -176,9 +190,8 @@ fun SettingsScreen(onOpenInstruments: () -> Unit) {
     ) {
         item {
             ScreenHeader(
-                title = "Plus",
-                subtitle = "Ce que tu règles une fois, et qui tient ensuite tout seul. " +
-                    "Ce que l'appareil refuse se règle dans l'onglet Protection.",
+                title = "Réglages",
+                subtitle = "Ce qui se règle une fois pour tenir ensuite tout seul.",
             )
         }
 
@@ -355,7 +368,10 @@ fun SettingsScreen(onOpenInstruments: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium,
                     color = mutedColor,
                 )
-                SecondaryAction(text = "Ouvrir les instruments", onClick = onOpenInstruments)
+                SecondaryAction(
+                    text = "Ouvrir les instruments",
+                    onClick = { onOpen(AppDestination.INSTRUMENTS) },
+                )
             }
         }
     }

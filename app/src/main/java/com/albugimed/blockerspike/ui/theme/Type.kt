@@ -2,107 +2,142 @@ package com.albugimed.blockerspike.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import com.albugimed.blockerspike.R
 
 /**
- * Trois familles, aucune embarquee.
+ * Trois familles, embarquees.
  *
- * La conception rendue demandait Fraunces pour les titres, Manrope pour le
- * corps et DM Mono pour les surtitres. Aucune n'est embarquee ici, et c'est un
- * choix, pas un renoncement :
+ * La version precedente s'en passait, et l'argument tenait tant que la
+ * conception se contentait d'un serif systeme. Il ne tient plus : l'identite
+ * rendue repose sur un **grotesque tres serre en graisse 800** que ni Noto
+ * Serif ni Roboto ne savent imiter. Sans la police, il ne restait que
+ * l'intention.
  *
- * - recuperer Fraunces suppose de telecharger un fichier, et l'API Google
- *   Fonts d'Android exige la dependance `ui-text-google-fonts` que le
- *   **contrat §10 interdit** ;
- * - a 12–14 sp sur un ecran a 520 dpi, Manrope est indiscernable de la police
- *   systeme. Payer 300 Ko pour une difference invisible n'est pas un arbitrage,
- *   c'est une distraction.
+ * Les fichiers vivent dans `res/font/` et ne sont **pas** une dependance
+ * Gradle : le contrat §10 interdit d'ajouter des modules, pas d'ajouter des
+ * ressources. C'est aussi ce qui ecarte `ui-text-google-fonts`, qui aurait
+ * telecharge les memes octets au prix d'une dependance et d'un appel reseau au
+ * premier affichage.
  *
- * Ce qui reste, et qui porte reellement l'identite, c'est **le geste** : un
- * serif pour les titres ([FontFamily.Serif], Noto Serif sur Android),
- * l'interlettrage resserre qui donne aux gros titres leur densite, et un
- * chasse-fixe pour les surtitres. Zero octet, zero dependance.
+ * - **Plus Jakarta Sans** (variable, 176 Ko) — les titres. Interlettrage
+ *   negatif, graisse 800 : c'est lui, le geste.
+ * - **Manrope** (variable, 165 Ko) — le corps et les libelles.
+ * - **DM Mono** (statique, 400 et 500, 100 Ko) — les surtitres en capitales.
  *
- * L'echelle tient en trois niveaux — titre d'ecran, titre de bloc, corps — et
- * `labelSmall` sert aux surtitres et aux faits neutres (« 13 j », « J-45 »).
- * L'ancien ecran empilait quinze tailles indistinctes.
+ * Les deux premieres sont des **polices variables** : Google Fonts ne publie
+ * plus d'instances statiques pour elles. Compose passe l'axe `wght` au moteur
+ * de rendu a partir du [FontWeight] demande — d'ou un seul fichier par famille
+ * la ou il en aurait fallu quatre. C'est supporte depuis l'API 26 ; le minSdk
+ * est 36.
+ *
+ * Total ~440 Ko sur un APK de 72 Mo, soit six dixiemes de pourcent.
+ *
+ * L'echelle tient toujours en trois niveaux — titre d'ecran, titre de bloc,
+ * corps — et `labelSmall` porte les surtitres et les faits neutres.
  */
-private val Display = FontFamily.Serif
-private val Kicker = FontFamily.Monospace
+private val Display = FontFamily(
+    Font(R.font.plus_jakarta_sans, FontWeight.Medium),
+    Font(R.font.plus_jakarta_sans, FontWeight.SemiBold),
+    Font(R.font.plus_jakarta_sans, FontWeight.Bold),
+    Font(R.font.plus_jakarta_sans, FontWeight.ExtraBold),
+)
+
+private val Body = FontFamily(
+    Font(R.font.manrope, FontWeight.Normal),
+    Font(R.font.manrope, FontWeight.Medium),
+    Font(R.font.manrope, FontWeight.SemiBold),
+    Font(R.font.manrope, FontWeight.Bold),
+    Font(R.font.manrope, FontWeight.ExtraBold),
+)
+
+private val Kicker = FontFamily(
+    Font(R.font.dm_mono_regular, FontWeight.Normal),
+    Font(R.font.dm_mono_medium, FontWeight.Medium),
+)
 
 internal val AlbugimedTypography = Typography(
+    /**
+     * Le titre d'ecran. 34 sp en 800, resserre de 1,7 sp.
+     *
+     * L'interlettrage negatif n'est pas une coquetterie : a cette graisse, les
+     * lettres se touchent presque, et c'est cette densite qui fait lire le
+     * titre comme un bloc plutot que comme une suite de mots.
+     */
     headlineMedium = TextStyle(
         fontFamily = Display,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 30.sp,
-        lineHeight = 34.sp,
-        letterSpacing = (-1.2).sp,
+        fontWeight = FontWeight.ExtraBold,
+        fontSize = 34.sp,
+        lineHeight = 38.sp,
+        letterSpacing = (-1.7).sp,
     ),
     headlineSmall = TextStyle(
         fontFamily = Display,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 23.sp,
-        lineHeight = 28.sp,
-        letterSpacing = (-0.7).sp,
+        fontWeight = FontWeight.ExtraBold,
+        fontSize = 25.sp,
+        lineHeight = 30.sp,
+        letterSpacing = (-1.0).sp,
     ),
     titleLarge = TextStyle(
         fontFamily = Display,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 20.sp,
+        fontWeight = FontWeight.Bold,
+        fontSize = 21.sp,
         lineHeight = 26.sp,
-        letterSpacing = (-0.4).sp,
+        letterSpacing = (-0.7).sp,
     ),
-    /** Le titre d'une carte : serif lui aussi, sinon le geste s'arrete au haut de l'ecran. */
+    /** Le titre d'une carte : la meme famille, sinon le geste s'arrete en haut de l'ecran. */
     titleMedium = TextStyle(
         fontFamily = Display,
-        fontWeight = FontWeight.SemiBold,
+        fontWeight = FontWeight.Bold,
         fontSize = 17.sp,
         lineHeight = 22.sp,
-        letterSpacing = (-0.2).sp,
+        letterSpacing = (-0.4).sp,
     ),
     titleSmall = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
+        fontFamily = Body,
+        fontWeight = FontWeight.SemiBold,
         fontSize = 14.sp,
         lineHeight = 19.sp,
         letterSpacing = 0.sp,
     ),
     bodyLarge = TextStyle(
-        fontFamily = FontFamily.Default,
+        fontFamily = Body,
         fontWeight = FontWeight.Normal,
         fontSize = 16.sp,
         lineHeight = 24.sp,
-        letterSpacing = 0.1.sp,
+        letterSpacing = 0.sp,
     ),
     bodyMedium = TextStyle(
-        fontFamily = FontFamily.Default,
+        fontFamily = Body,
         fontWeight = FontWeight.Normal,
         fontSize = 14.sp,
         lineHeight = 21.sp,
-        letterSpacing = 0.1.sp,
+        letterSpacing = 0.sp,
     ),
     bodySmall = TextStyle(
-        fontFamily = FontFamily.Default,
+        fontFamily = Body,
         fontWeight = FontWeight.Normal,
         fontSize = 13.sp,
         lineHeight = 19.sp,
-        letterSpacing = 0.1.sp,
+        letterSpacing = 0.sp,
     ),
+    /** Le texte d'un bouton : graisse 800, comme les pilules de la conception. */
     labelLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.SemiBold,
+        fontFamily = Body,
+        fontWeight = FontWeight.ExtraBold,
         fontSize = 14.sp,
         lineHeight = 18.sp,
-        letterSpacing = 0.1.sp,
+        letterSpacing = 0.sp,
     ),
     labelMedium = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
+        fontFamily = Body,
+        fontWeight = FontWeight.SemiBold,
         fontSize = 12.sp,
         lineHeight = 16.sp,
-        letterSpacing = 0.3.sp,
+        letterSpacing = 0.2.sp,
     ),
     /**
      * Le surtitre : chasse-fixe, capitales, espacees.
@@ -116,6 +151,6 @@ internal val AlbugimedTypography = Typography(
         fontWeight = FontWeight.Medium,
         fontSize = 12.sp,
         lineHeight = 16.sp,
-        letterSpacing = 1.1.sp,
+        letterSpacing = 1.0.sp,
     ),
 )

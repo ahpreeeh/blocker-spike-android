@@ -1,11 +1,13 @@
 package com.albugimed.blockerspike.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -30,9 +32,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.albugimed.blockerspike.ui.theme.ActionShape
+import com.albugimed.blockerspike.ui.theme.Citron
 import com.albugimed.blockerspike.ui.theme.LocalAlbugimedExtras
 
 /**
@@ -73,12 +79,12 @@ fun ProtectionCard(
     val extras = LocalAlbugimedExtras.current
     var askExit by rememberSaveable { mutableStateOf(false) }
 
-    val shape = RoundedCornerShape(22.dp)
+    val shape = RoundedCornerShape(24.dp)
     val background = if (failsafeOverride) extras.protectionPaused else extras.protectionActive
     val bodyColor = if (failsafeOverride) extras.onPausedBody else extras.onProtectionBody
     val kickerColor = if (failsafeOverride) extras.onPausedKicker else extras.onProtectionKicker
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .background(background, shape)
@@ -91,97 +97,141 @@ fun ProtectionCard(
                     Modifier
                 },
             )
-            .padding(horizontal = 18.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .clip(shape),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        // Le cercle qui deborde par le coin bas-droit, repris de la conception.
+        // Un trait, pas un aplat : il donne de la profondeur au vert sans rien
+        // ajouter a lire, et il est coupe par le `clip` du coin arrondi —
+        // c'est ce debordement qui fait que la carte a l'air posee sur quelque
+        // chose de plus grand qu'elle.
+        Canvas(modifier = Modifier.matchParentSize()) {
+            drawCircle(
+                color = Citron.Vif.copy(alpha = 0.24f),
+                radius = 105.dp.toPx(),
+                center = Offset(size.width - 30.dp.toPx(), size.height - 14.dp.toPx()),
+                style = Stroke(width = 1.dp.toPx()),
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "PROTECTION",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = kickerColor,
-                )
-                Text(
-                    if (failsafeOverride) "Les refus sont suspendus." else "Les refus tiennent.",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = extras.onProtectionTitle,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-            }
-            StatePill(
-                text = if (failsafeOverride) "SUSPENDU" else "EN COURS",
-                dotColor = if (failsafeOverride) extras.protectionRing else extras.onProtectionKicker,
-                textColor = extras.onProtectionTitle,
-            )
-        }
-
-        Text(
-            protectionSummary(failsafeOverride, blockedCount),
-            style = MaterialTheme.typography.bodyMedium,
-            color = bodyColor,
-        )
-
-        if (!storageHealthy) {
-            Text(
-                "Le stockage des règles est illisible : aucun refus ne s'applique, " +
-                    "quel que soit l'état affiché ci-dessus.",
-                style = MaterialTheme.typography.bodySmall,
-                color = extras.protectionRing,
-            )
-        }
-
-        if (onOpenProtection != null || failsafeOverride) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                onOpenProtection?.let { open ->
-                    OutlinedButton(
-                        onClick = open,
-                        modifier = Modifier.heightIn(min = 48.dp),
-                        shape = ActionShape,
-                        border = BorderStroke(1.dp, extras.onProtectionOutline),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = extras.onProtectionTitle,
-                        ),
-                    ) {
-                        Text("Voir les applications", style = MaterialTheme.typography.labelLarge)
-                    }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        // « Protection » ne disait pas ce qui se passe : on protege
+                        // de quoi, et comment ? « Blocage » nomme le mecanisme, et
+                        // c'est le mot que l'utilisateur emploie lui-meme.
+                        "BLOCAGE",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = kickerColor,
+                    )
+                    Text(
+                        if (failsafeOverride) {
+                            "Les refus sont suspendus."
+                        } else {
+                            "Les refus tiennent."
+                        },
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = extras.onProtectionTitle,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
                 }
-                if (failsafeOverride) {
-                    Button(
-                        onClick = onRestore,
-                        modifier = Modifier.heightIn(min = 48.dp),
-                        shape = ActionShape,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = extras.protectionRing,
-                            contentColor = extras.protectionPaused,
-                        ),
-                    ) {
-                        Text("Rétablir", style = MaterialTheme.typography.labelLarge)
+                StatePill(
+                    text = if (failsafeOverride) "SUSPENDU" else "EN COURS",
+                    dotColor = if (failsafeOverride) {
+                        extras.protectionRing
+                    } else {
+                        extras.onProtectionKicker
+                    },
+                    textColor = extras.onProtectionTitle,
+                )
+            }
+
+            Text(
+                protectionSummary(failsafeOverride, blockedCount),
+                style = MaterialTheme.typography.bodyMedium,
+                color = bodyColor,
+            )
+
+            if (!storageHealthy) {
+                Text(
+                    "Le stockage des règles est illisible : aucun refus ne s'applique, " +
+                        "quel que soit l'état affiché ci-dessus.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = extras.protectionRing,
+                )
+            }
+
+            if (onOpenProtection != null || failsafeOverride) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    onOpenProtection?.let { open ->
+                        // La pilule citron de la conception, avec sa fleche.
+                        // Un bouton simplement cercle sur du vert profond se
+                        // lisait comme un cadre vide : c'est le seul endroit
+                        // de la carte ou l'on peut agir, il doit se voir.
+                        Button(
+                            onClick = open,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            shape = ActionShape,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Citron.Clair,
+                                contentColor = extras.protectionActive,
+                            ),
+                        ) {
+                            Text(
+                                "Voir les applications",
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                            Glyph(
+                                AppIcon.ARROW,
+                                size = 15.dp,
+                                tint = extras.protectionActive,
+                                modifier = Modifier.padding(start = 7.dp),
+                            )
+                        }
+                    }
+                    if (failsafeOverride) {
+                        Button(
+                            onClick = onRestore,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            shape = ActionShape,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = extras.protectionRing,
+                                contentColor = extras.protectionPaused,
+                            ),
+                        ) {
+                            Text("Rétablir", style = MaterialTheme.typography.labelLarge)
+                        }
                     }
                 }
             }
-        }
 
-        // Le lien n'agit pas : il ouvre l'avertissement. Un dernier recours qui
-        // se declenche du premier coup n'est pas un dernier recours.
-        if (!failsafeOverride) {
-            TextButton(
-                onClick = { askExit = true },
-                modifier = Modifier.heightIn(min = 48.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp),
-            ) {
-                Text(
-                    "Sortie de secours",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = extras.onProtectionLink,
-                    textDecoration = TextDecoration.Underline,
-                )
+            // Le lien n'agit pas : il ouvre l'avertissement. Un dernier recours
+            // qui se declenche du premier coup n'est pas un dernier recours.
+            if (!failsafeOverride) {
+                TextButton(
+                    onClick = { askExit = true },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    contentPadding = PaddingValues(horizontal = 0.dp),
+                ) {
+                    Text(
+                        "Sortie de secours",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = extras.onProtectionLink,
+                        textDecoration = TextDecoration.Underline,
+                    )
+                }
             }
         }
     }

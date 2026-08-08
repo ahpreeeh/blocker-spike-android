@@ -23,7 +23,14 @@ class CaptureOutboxRepository(
     private val logger: SyncLogger = SystemSyncLogger,
 ) {
     val pendingCount: Flow<Int> = dao.pendingCount()
-    val dead: Flow<List<PendingCaptureRow>> = dao.dead()
+
+    /**
+     * Toutes les notes, du plus récent au plus ancien — y compris celles que
+     * le serveur a déjà confirmées. C'est la seule preuve visible qu'un
+     * partage a fonctionné : sans elle, une capture réussie et une capture
+     * jamais faite se ressemblent trait pour trait.
+     */
+    val notes: Flow<List<PendingCaptureRow>> = dao.all(NOTES_LIMIT)
 
     /**
      * Met une capture en file d'attente.
@@ -54,18 +61,23 @@ class CaptureOutboxRepository(
         emptyList()
     }
 
-    suspend fun forget(captureIds: Collection<String>) {
+    /**
+     * Le serveur a confirmé. La capture **reste sur l'appareil** et change
+     * d'état : c'est ce qui permet de la retrouver dans les notes au lieu de
+     * la voir s'évaporer.
+     */
+    suspend fun markSent(captureIds: Collection<String>, nowMillis: Long) {
         if (captureIds.isEmpty()) return
-        runCatching { dao.forget(captureIds.toList()) }
+        runCatching { dao.markSent(captureIds.toList(), nowMillis) }
             .onSuccess {
                 logger.add(SyncLogger.TAG_SYNC, "Captures confirmées : ${captureIds.size}")
             }
             .onFailure { error ->
-                // Échec sans conséquence : les captures restent en file et
+                // Échec sans conséquence : les captures restent en attente et
                 // seront renvoyées. Le serveur répondra `duplicate`.
                 logger.add(
                     SyncLogger.TAG_ERROR,
-                    "Nettoyage de la file impossible : ${error.javaClass.simpleName}",
+                    "Marquage des captures impossible : ${error.javaClass.simpleName}",
                 )
             }
     }
@@ -81,7 +93,16 @@ class CaptureOutboxRepository(
             }
     }
 
-    suspend fun forgetDead(captureId: String) {
-        runCatching { dao.forgetDead(captureId) }
+    /** Le seul effacement définitif du flux de capture, et il est manuel. */
+    suspend fun forget(captureId: String) {
+        runCatching { dao.forget(captureId) }
+    }
+
+    private companion object {
+        /**
+         * Ce que la page des notes affiche au plus. Au-delà on cesse de
+         * montrer, on n'efface pas : une note ne part que sur un geste.
+         */
+        const val NOTES_LIMIT = 200
     }
 }
