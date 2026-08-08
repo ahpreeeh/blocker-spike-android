@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Ces deux couleurs ne servent qu'a la fenetre elle-meme : fond avant que
+  Compose ait dessine, et barres systeme. Le reste de la palette vit dans
+  `ui/theme/Color.kt`. Les valeurs doivent rester identiques a
+  SoftSlate.Page et SoftSlate.Card, sinon l'ecran clignote au lancement.
+-->
+<resources>
+    <color name="window_background">#E8EBF1</color>
+    <color name="window_surface">#FFFFFF</color>
+</resources>

@@ -11,21 +11,19 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -43,7 +42,19 @@ import com.albugimed.blockerspike.sync.AcademicNodeRef
 import com.albugimed.blockerspike.sync.ActivityKind
 import com.albugimed.blockerspike.sync.Difficulty
 import com.albugimed.blockerspike.sync.QueueItem
+import com.albugimed.blockerspike.ui.EmptyState
+import com.albugimed.blockerspike.ui.Fact
+import com.albugimed.blockerspike.ui.Kicker
+import com.albugimed.blockerspike.ui.Notice
+import com.albugimed.blockerspike.ui.NoticeTone
+import com.albugimed.blockerspike.ui.PrimaryAction
+import com.albugimed.blockerspike.ui.ScreenHeader
+import com.albugimed.blockerspike.ui.SecondaryAction
 import com.albugimed.blockerspike.ui.Section
+import com.albugimed.blockerspike.ui.SubjectDot
+import com.albugimed.blockerspike.ui.SurfaceCard
+import com.albugimed.blockerspike.ui.mutedColor
+import com.albugimed.blockerspike.ui.theme.AlbugimedTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -81,7 +92,7 @@ class DeclareActivity : ComponentActivity() {
             }
         }
         setContent {
-            MaterialTheme {
+            AlbugimedTheme {
                 val queue by repository.queueState.collectAsStateWithLifecycle(
                     initialValue = StudyQueueState(),
                 )
@@ -160,7 +171,7 @@ data class PageRangePrefill(val from: Int, val to: Int)
 
 @Composable
 private fun MissingStepScreen(onClose: () -> Unit) {
-    Scaffold { padding ->
+    Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -168,9 +179,9 @@ private fun MissingStepScreen(onClose: () -> Unit) {
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("Déclaration", style = MaterialTheme.typography.headlineMedium)
-            Text("Cette étape n'est plus disponible dans la file en cache.")
-            TextButton(onClick = onClose) { Text("Retour à la file") }
+            ScreenHeader(title = "Déclaration")
+            EmptyState("Cette étape n'est plus disponible dans la file en cache.")
+            SecondaryAction(text = "Retour à la file", onClick = onClose)
         }
     }
 }
@@ -210,18 +221,18 @@ internal fun DeclareScreen(
     }
     val activityKind = ActivityKind.entries.firstOrNull { it.name == activityKindName }
 
-    Scaffold { padding ->
-        androidx.compose.foundation.lazy.LazyColumn(
+    Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Text(
-                    if (queueItem == null) "Déclarer hors file" else "Déclarer le travail",
-                    style = MaterialTheme.typography.headlineMedium,
+                ScreenHeader(
+                    title = if (queueItem == null) "Déclarer hors file" else "Déclarer le travail",
+                    subtitle = "Ce que tu as réellement fait. Rien n'est deviné à ta place.",
                 )
             }
             item {
@@ -248,16 +259,12 @@ internal fun DeclareScreen(
             }
             queueItem?.resource?.openUri?.let { openUri ->
                 item {
-                    OutlinedButton(
-                        onClick = {
-                            resourceError = onOpenResource(openUri)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("Ouvrir la ressource")
-                    }
+                    SecondaryAction(
+                        text = "Ouvrir la ressource",
+                        onClick = { resourceError = onOpenResource(openUri) },
+                    )
                     resourceError?.let { error ->
-                        Text(error, color = MaterialTheme.colorScheme.error)
+                        Notice(error, tone = NoticeTone.PROBLEM)
                     }
                 }
             }
@@ -330,7 +337,12 @@ internal fun DeclareScreen(
                             )
                         }
 
-                        WorkUnitType.CHAPTER -> Text("Chapitre entier")
+                        WorkUnitType.CHAPTER -> Text(
+                            "Chapitre entier",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = mutedColor,
+                        )
+
                         WorkUnitType.ANNALE -> OutlinedTextField(
                             value = annaleLabel,
                             onValueChange = { annaleLabel = it },
@@ -393,11 +405,17 @@ internal fun DeclareScreen(
             }
             validationMessage?.let { message ->
                 item {
-                    Text(message, color = MaterialTheme.colorScheme.error)
+                    Notice(message, tone = NoticeTone.PROBLEM)
                 }
             }
             item {
-                Button(
+                PrimaryAction(
+                    enabled = !saving && !saved,
+                    text = when {
+                        saving -> "Enregistrement…"
+                        saved -> "Enregistré"
+                        else -> "Enregistrer"
+                    },
                     onClick = {
                         val form = DeclareFormState(
                             durationMinutes = durationMinutes,
@@ -449,24 +467,23 @@ internal fun DeclareScreen(
                             }
                         }
                     },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !saving && !saved,
-                ) {
-                    if (saving) {
-                        CircularProgressIndicator()
-                    } else {
-                        Text("Enregistrer")
-                    }
-                }
+                )
             }
             if (saved) {
+                // §7.2 : le mot est « Enregistré », jamais « Envoyé ». La
+                // declaration est ecrite sur l'appareil avant toute tentative
+                // reseau ; promettre l'envoi serait une promesse qu'on ne
+                // tient pas hors ligne.
                 item {
-                    Text(
-                        "Enregistré",
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    TextButton(onClick = onDone) { Text("Retour à la file") }
+                    Section(title = "Enregistré", kicker = "Sur cet appareil") {
+                        Text(
+                            "C'est écrit ici. L'envoi vers l'atelier se fera tout seul, " +
+                                "même si le réseau manque maintenant.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = mutedColor,
+                        )
+                        SecondaryAction(text = "Retour à la file", onClick = onDone)
+                    }
                 }
             }
         }
@@ -494,10 +511,14 @@ private fun FreeTargetPicker(
     }
     val selectedChapter = chapters.firstOrNull { it.nodeId == selectedChapterId }
 
-    Section("Cible") {
-        Text("Matière", style = MaterialTheme.typography.labelLarge)
+    Section(title = "Cible", kicker = "Sur quoi tu as travaillé") {
+        Kicker("Matière")
         if (subjects.isEmpty()) {
-            Text("Aucune matière disponible dans la copie locale. Actualise la file.")
+            Text(
+                "Aucune matière disponible dans la copie locale. Actualise la file.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = mutedColor,
+            )
         } else {
             Row(
                 modifier = Modifier
@@ -515,10 +536,20 @@ private fun FreeTargetPicker(
             }
         }
 
-        Text("Chapitre", style = MaterialTheme.typography.labelLarge)
+        Kicker("Chapitre")
         when {
-            selectedSubject == null -> Text("Choisis d'abord une matière.")
-            chapters.isEmpty() -> Text("Cette matière n'a aucun chapitre disponible.")
+            selectedSubject == null -> Text(
+                "Choisis d'abord une matière.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = mutedColor,
+            )
+
+            chapters.isEmpty() -> Text(
+                "Cette matière n'a aucun chapitre disponible.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = mutedColor,
+            )
+
             else -> Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -535,9 +566,13 @@ private fun FreeTargetPicker(
             }
         }
 
-        Text("Type de travail", style = MaterialTheme.typography.labelLarge)
+        Kicker("Type de travail")
         if (selectedChapter == null) {
-            Text("Choisis d'abord un chapitre.")
+            Text(
+                "Choisis d'abord un chapitre.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = mutedColor,
+            )
         } else {
             Row(
                 modifier = Modifier
@@ -557,25 +592,29 @@ private fun FreeTargetPicker(
     }
 }
 
+/** Le rappel de l'etape : de quoi verifier qu'on declare la bonne chose. */
 @Composable
 private fun StepReminder(item: QueueItem) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+    SurfaceCard {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(item.label, style = MaterialTheme.typography.titleMedium)
-            Text(item.subject.label)
-            Text(item.kind.displayKindLabel(), style = MaterialTheme.typography.bodySmall)
-            item.signals.lastWork?.let { lastWork ->
-                Text(
-                    "Dernier travail : ${lastWorkDisplayLabel(lastWork, item.resource)}",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
+            SubjectDot(item.subject.label)
+            Text(
+                item.subject.label,
+                style = MaterialTheme.typography.bodySmall,
+                color = mutedColor,
+                modifier = Modifier.weight(1f),
+            )
+            Kicker(item.kind.displayKindLabel())
         }
+        Text(item.label, style = MaterialTheme.typography.titleMedium)
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Fact(
+            "Dernier travail",
+            item.signals.lastWork?.let { lastWorkDisplayLabel(it, item.resource) },
+        )
     }
 }
 

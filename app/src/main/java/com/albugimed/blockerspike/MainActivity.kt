@@ -5,10 +5,11 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material3.MaterialTheme
 import androidx.core.content.ContextCompat
-import com.albugimed.blockerspike.ui.MainScreen
+import com.albugimed.blockerspike.ui.AppShell
+import com.albugimed.blockerspike.ui.theme.AlbugimedTheme
 
 class MainActivity : ComponentActivity() {
 
@@ -19,14 +20,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
             != PackageManager.PERMISSION_GRANTED
         ) {
             requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         setContent {
-            MaterialTheme {
-                MainScreen()
+            AlbugimedTheme {
+                AppShell()
             }
         }
     }

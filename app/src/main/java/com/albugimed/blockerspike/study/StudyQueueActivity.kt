@@ -13,13 +13,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -31,6 +29,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -41,7 +40,18 @@ import com.albugimed.blockerspike.reader.ReadingPosition
 import com.albugimed.blockerspike.sync.EnrolOutcome
 import com.albugimed.blockerspike.sync.QueueItem
 import com.albugimed.blockerspike.sync.SyncState
+import com.albugimed.blockerspike.ui.Fact
+import com.albugimed.blockerspike.ui.Kicker
+import com.albugimed.blockerspike.ui.Notice
+import com.albugimed.blockerspike.ui.NoticeTone
+import com.albugimed.blockerspike.ui.PrimaryAction
+import com.albugimed.blockerspike.ui.ScreenHeader
+import com.albugimed.blockerspike.ui.SecondaryAction
 import com.albugimed.blockerspike.ui.Section
+import com.albugimed.blockerspike.ui.SubjectDot
+import com.albugimed.blockerspike.ui.SurfaceCard
+import com.albugimed.blockerspike.ui.mutedColor
+import com.albugimed.blockerspike.ui.theme.AlbugimedTheme
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
@@ -49,36 +59,56 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
 
+/**
+ * La file, ouverte seule.
+ *
+ * Depuis V2.3 la file est surtout un onglet de la coque
+ * (`com.albugimed.blockerspike.ui.AppShell`). Cette activite reste declaree
+ * pour les entrees externes — un raccourci, une notification — et se contente
+ * d'habiller le meme composable. C'est pour cela que [StudyQueueScreen] ne
+ * porte plus de `Scaffold` : c'est l'hote qui en fournit un.
+ */
 class StudyQueueActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val repository = StudyDependencies.repository(applicationContext)
         setContent {
-            MaterialTheme {
+            AlbugimedTheme {
                 val positions by Graph.readingPositions.positions
                     .collectAsStateWithLifecycle(initialValue = emptyMap())
-                StudyQueueScreen(
-                    repository = repository,
-                    onDeclare = { queueItem ->
-                        startActivity(DeclareActivity.intent(this, queueItem.stepId))
-                    },
-                    onDeclareFree = {
-                        startActivity(DeclareActivity.freeIntent(this))
-                    },
-                    positions = positions,
-                    onResume = { queueItem ->
-                        queueItem.resource?.let { resource ->
-                            startActivity(
-                                ReaderActivity.intent(
-                                    context = this,
-                                    resourceId = resource.resourceId,
-                                    resourceLabel = resource.label,
-                                    stepId = queueItem.stepId,
+                Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
+                    Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+                        StudyQueueScreen(
+                            repository = repository,
+                            onDeclare = { queueItem ->
+                                startActivity(
+                                DeclareActivity.intent(
+                                    this@StudyQueueActivity,
+                                    queueItem.stepId,
                                 ),
                             )
-                        }
-                    },
-                )
+                            },
+                            onDeclareFree = {
+                                startActivity(
+                                    DeclareActivity.freeIntent(this@StudyQueueActivity),
+                                )
+                            },
+                            positions = positions,
+                            onResume = { queueItem ->
+                                queueItem.resource?.let { resource ->
+                                    startActivity(
+                                        ReaderActivity.intent(
+                                            context = this@StudyQueueActivity,
+                                            resourceId = resource.resourceId,
+                                            resourceLabel = resource.label,
+                                            stepId = queueItem.stepId,
+                                        ),
+                                    )
+                                }
+                            },
+                        )
+                    }
+                }
             }
         }
     }
@@ -98,9 +128,6 @@ internal fun StudyQueueScreen(
 ) {
     val state by repository.queueState.collectAsStateWithLifecycle(
         initialValue = StudyQueueState(),
-    )
-    val agendaState by repository.agendaState.collectAsStateWithLifecycle(
-        initialValue = AgendaState(),
     )
     val syncState by repository.syncState.collectAsStateWithLifecycle(
         initialValue = SyncState(),
@@ -124,69 +151,62 @@ internal fun StudyQueueScreen(
         return
     }
 
-    Scaffold { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            ScreenHeader(
+                title = "File",
+                subtitle = "Dans l'ordre que tu as donné. L'application ne le change pas.",
+            )
+        }
+        item {
+            QueueStatusCard(
+                state = state,
+                showRejections = showRejections,
+                retrying = retrying,
+                onToggleRejections = { showRejections = !showRejections },
+                onRetry = {
+                    scope.launch {
+                        retrying = true
+                        operationError = null
+                        runCatching { repository.retryPending() }
+                            .onFailure {
+                                operationError =
+                                    "Nouvel essai impossible. Les éléments restent en attente."
+                            }
+                        retrying = false
+                    }
+                },
+            )
+        }
+        operationError?.let { error ->
             item {
-                AgendaHeader(agendaState)
+                Notice(error, tone = NoticeTone.PROBLEM)
             }
+        }
+        item {
+            SecondaryAction(text = "Déclarer autre chose", onClick = onDeclareFree)
+        }
+        if (state.items.isEmpty()) {
             item {
-                Text("File", style = MaterialTheme.typography.headlineMedium)
-            }
-            item {
-                QueueStatusCard(
-                    state = state,
-                    showRejections = showRejections,
-                    retrying = retrying,
-                    onToggleRejections = { showRejections = !showRejections },
-                    onRetry = {
-                        scope.launch {
-                            retrying = true
-                            operationError = null
-                            runCatching { repository.retryPending() }
-                                .onFailure {
-                                    operationError =
-                                        "Nouvel essai impossible. Les éléments restent en attente."
-                                }
-                            retrying = false
-                        }
-                    },
+                Text(
+                    "La file en cache est vide. Choisis dans l'atelier ce que tu veux " +
+                        "travailler ensuite.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = mutedColor,
                 )
             }
-            operationError?.let { error ->
-                item {
-                    Text(error, color = MaterialTheme.colorScheme.error)
-                }
-            }
-            item {
-                OutlinedButton(
-                    onClick = onDeclareFree,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Déclarer autre chose")
-                }
-            }
-            if (state.items.isEmpty()) {
-                item {
-                    Text(
-                        "La file en cache est vide.",
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                }
-            } else {
-                items(items = state.items, key = QueueItem::stepId) { item ->
-                    QueueItemCard(
-                        item = item,
-                        onClick = { onDeclare(item) },
-                        position = item.resource?.let { positions[it.resourceId] },
-                        onResume = { onResume(item) },
-                    )
-                }
+        } else {
+            items(items = state.items, key = QueueItem::stepId) { item ->
+                QueueItemCard(
+                    item = item,
+                    onDeclare = { onDeclare(item) },
+                    position = item.resource?.let { positions[it.resourceId] },
+                    onResume = { onResume(item) },
+                )
             }
         }
     }
@@ -204,48 +224,49 @@ private fun EnrolmentScreen(
     var outcomeMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    Scaffold { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text("File", style = MaterialTheme.typography.headlineMedium)
-            if (syncState.halted) {
-                Text(
-                    "Jeton refusé",
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                if (queueState.outboxStorageHealthy) {
-                    Text(pendingLabel(queueState.pendingCount))
-                } else {
-                    Text(
-                        "État de la file d'envoi illisible.",
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        ScreenHeader(
+            title = "File",
+            subtitle = "Cet appareil n'est pas encore relié à l'atelier.",
+        )
+        if (syncState.halted) {
+            Notice("Jeton refusé par le serveur.", tone = NoticeTone.PROBLEM)
+            if (queueState.outboxStorageHealthy) {
+                Notice("${pendingLabel(queueState.pendingCount)} — rien n'est perdu.")
+            } else {
+                Notice("État de la file d'envoi illisible.", tone = NoticeTone.PROBLEM)
             }
-            Section("Enrôler cet appareil") {
-                OutlinedTextField(
-                    value = baseUrl,
-                    onValueChange = { baseUrl = it },
-                    label = { Text("Adresse HTTPS de l'atelier") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = token,
-                    onValueChange = { token = it },
-                    label = { Text("Jeton de l'appareil") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
-                Button(
+        }
+        Section(title = "Enrôler cet appareil", kicker = "Une seule fois") {
+            OutlinedTextField(
+                value = baseUrl,
+                onValueChange = { baseUrl = it },
+                label = { Text("Adresse HTTPS de l'atelier") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = MaterialTheme.shapes.medium,
+            )
+            OutlinedTextField(
+                value = token,
+                onValueChange = { token = it },
+                label = { Text("Jeton de l'appareil") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = MaterialTheme.shapes.medium,
+            )
+            if (enrolling) {
+                CircularProgressIndicator()
+            } else {
+                PrimaryAction(
+                    text = "Enrôler l'appareil",
+                    enabled = baseUrl.isNotBlank() && token.isNotBlank(),
                     onClick = {
                         scope.launch {
                             enrolling = true
@@ -260,18 +281,10 @@ private fun EnrolmentScreen(
                             enrolling = false
                         }
                     },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = baseUrl.isNotBlank() && token.isNotBlank() && !enrolling,
-                ) {
-                    if (enrolling) {
-                        CircularProgressIndicator()
-                    } else {
-                        Text("Enrôler l'appareil")
-                    }
-                }
-                outcomeMessage?.let { message ->
-                    Text(message, color = MaterialTheme.colorScheme.error)
-                }
+                )
+            }
+            outcomeMessage?.let { message ->
+                Notice(message, tone = NoticeTone.PROBLEM)
             }
         }
     }
@@ -285,63 +298,64 @@ private fun QueueStatusCard(
     onToggleRejections: () -> Unit,
     onRetry: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(cacheFreshnessLabel(state.cachedAtMillis))
-            if (state.skippedQueueItems > 0) {
-                Text(
-                    "${state.skippedQueueItems} étape(s) reçue(s) illisible(s)",
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-            if (state.skippedQueueNodes > 0) {
-                Text(
-                    "${state.skippedQueueNodes} matière(s) ou chapitre(s) reçu(s) illisible(s)",
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-            if (!state.outboxStorageHealthy) {
-                Text(
-                    "État de la file d'envoi illisible.",
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-            if (state.unreadableCount > 0) {
-                Text(
-                    "${state.unreadableCount} trace(s) locale(s) illisible(s)",
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-            if (state.pendingCount > 0) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(pendingLabel(state.pendingCount))
-                    OutlinedButton(onClick = onRetry, enabled = !retrying) {
-                        Text(if (retrying) "Nouvel essai…" else "Réessayer")
-                    }
+    SurfaceCard {
+        Text(
+            cacheFreshnessLabel(state.cachedAtMillis),
+            style = MaterialTheme.typography.bodySmall,
+            color = mutedColor,
+        )
+        if (state.skippedQueueItems > 0) {
+            Notice(
+                "${state.skippedQueueItems} étape(s) reçue(s) illisible(s)",
+                tone = NoticeTone.PROBLEM,
+            )
+        }
+        if (state.skippedQueueNodes > 0) {
+            Notice(
+                "${state.skippedQueueNodes} matière(s) ou chapitre(s) reçu(s) illisible(s)",
+                tone = NoticeTone.PROBLEM,
+            )
+        }
+        if (!state.outboxStorageHealthy) {
+            Notice("État de la file d'envoi illisible.", tone = NoticeTone.PROBLEM)
+        }
+        if (state.unreadableCount > 0) {
+            Notice(
+                "${state.unreadableCount} trace(s) locale(s) illisible(s)",
+                tone = NoticeTone.PROBLEM,
+            )
+        }
+        if (state.pendingCount > 0) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(pendingLabel(state.pendingCount), style = MaterialTheme.typography.bodyMedium)
+                TextButton(onClick = onRetry, enabled = !retrying) {
+                    Text(if (retrying) "Nouvel essai…" else "Réessayer")
                 }
             }
-            if (state.rejectedEvents.isNotEmpty()) {
-                TextButton(onClick = onToggleRejections) {
-                    Text(rejectedLabel(state.rejectedEvents.size))
-                }
-                if (showRejections) {
-                    HorizontalDivider()
-                    state.rejectedEvents.forEach { rejected ->
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(
-                                rejected.event.eventId,
-                                style = MaterialTheme.typography.labelMedium,
-                            )
-                            Text(rejected.reason, style = MaterialTheme.typography.bodySmall)
-                        }
+        }
+        // Le compteur de rejets n'est pas decoratif : c'est la garantie
+        // visible que rien ne disparait en silence (§7.1 point 3).
+        if (state.rejectedEvents.isNotEmpty()) {
+            TextButton(onClick = onToggleRejections) {
+                Text(rejectedLabel(state.rejectedEvents.size))
+            }
+            if (showRejections) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                state.rejectedEvents.forEach { rejected ->
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            rejected.event.eventId,
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                        Text(
+                            rejected.reason,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = mutedColor,
+                        )
                     }
                 }
             }
@@ -349,46 +363,62 @@ private fun QueueStatusCard(
     }
 }
 
+/**
+ * Une etape de la file.
+ *
+ * La carte n'est plus cliquable dans son ensemble : une zone qui declare un
+ * travail sans le dire est exactement ce qui rendait l'ecran illisible. Les
+ * deux gestes possibles sont ecrits, et l'ordre dit lequel est le geste
+ * courant — on ouvre le document, on declare ensuite.
+ *
+ * Aucun tri, aucun badge, aucune couleur d'alerte : la pastille identifie la
+ * matiere, les signaux restent des faits neutres (cadrage §1.1).
+ */
 @Composable
 private fun QueueItemCard(
     item: QueueItem,
-    onClick: () -> Unit,
+    onDeclare: () -> Unit,
     position: ReadingPosition? = null,
     onResume: () -> Unit = {},
 ) {
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+    SurfaceCard {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(item.label, style = MaterialTheme.typography.titleMedium)
-            Text(item.subject.label, style = MaterialTheme.typography.bodyMedium)
-            Text(item.kind.displayKindLabel(), style = MaterialTheme.typography.bodySmall)
-            item.resource?.let { resource ->
-                Text("Ressource : ${resource.label}")
-            }
+            SubjectDot(item.subject.label)
             Text(
-                "Fraîcheur : ${item.signals.freshnessDays?.let { "$it j" } ?: "—"}",
+                item.subject.label,
                 style = MaterialTheme.typography.bodySmall,
+                color = mutedColor,
+                modifier = Modifier.weight(1f),
             )
-            item.signals.lastWork?.let { lastWork ->
-                Text(
-                    "Dernier travail : ${lastWorkDisplayLabel(lastWork, item.resource)}",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            // V2.2 : le bouton existe des qu'il y a une ressource, sinon
-            // rien ne permettrait de rattacher un document la premiere fois.
-            // C'est le MOT qui change, et seulement quand la promesse peut
-            // etre tenue : sans document, rien ne ramene a la page, et
-            // afficher "Reprendre" serait mentir.
-            if (item.resource != null) {
-                OutlinedButton(onClick = onResume, modifier = Modifier.fillMaxWidth()) {
-                    Text(resumeButtonLabel(position))
-                }
-            }
+            Kicker(item.kind.displayKindLabel())
+        }
+        Text(item.label, style = MaterialTheme.typography.titleMedium)
+        item.resource?.let { resource ->
+            Text(
+                resource.label,
+                style = MaterialTheme.typography.bodySmall,
+                color = mutedColor,
+            )
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Fact("Fraîcheur", item.signals.freshnessDays?.let { "$it j" })
+        Fact(
+            "Dernier travail",
+            item.signals.lastWork?.let { lastWorkDisplayLabel(it, item.resource) },
+        )
+        // V2.2 : le bouton existe des qu'il y a une ressource, sinon
+        // rien ne permettrait de rattacher un document la premiere fois.
+        // C'est le MOT qui change, et seulement quand la promesse peut
+        // etre tenue : sans document, rien ne ramene a la page, et
+        // afficher "Reprendre" serait mentir.
+        if (item.resource != null) {
+            PrimaryAction(text = resumeButtonLabel(position), onClick = onResume)
+            SecondaryAction(text = "Déclarer ce travail", onClick = onDeclare)
+        } else {
+            PrimaryAction(text = "Déclarer ce travail", onClick = onDeclare)
         }
     }
 }

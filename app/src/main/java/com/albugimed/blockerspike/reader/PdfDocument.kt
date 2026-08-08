@@ -61,6 +61,29 @@ class PdfDocument private constructor(
         }.getOrNull()
     }
 
+    /**
+     * Le rapport largeur / hauteur d'une page, **sans la rendre**.
+     *
+     * Ouvrir une page n'alloue pas d'image : c'est assez pour réserver la
+     * bonne hauteur dans la liste avant que le rendu n'arrive. Une page qui
+     * se déclare de taille nulle est traitée comme inconnue plutôt que de
+     * produire une division par zéro à la mise en page.
+     */
+    fun aspectRatio(displayedPage: Int): Float? {
+        val index = displayedPage - 1
+        if (index !in 0 until renderer.pageCount) return null
+
+        return runCatching {
+            renderer.openPage(index).use { page ->
+                if (page.width <= 0 || page.height <= 0) {
+                    null
+                } else {
+                    page.width.toFloat() / page.height.toFloat()
+                }
+            }
+        }.getOrNull()
+    }
+
     override fun close() {
         runCatching { renderer.close() }
         runCatching { descriptor.close() }

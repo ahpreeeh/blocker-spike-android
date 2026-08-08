@@ -1,4 +1,14 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.BlockerSpike" parent="android:Theme.Material.Light.NoActionBar" />
+    <!--
+      Le theme de fenetre, et rien de plus : Compose peint tout le reste.
+      Il existe pour que le lancement n'affiche pas un blanc brut avant la
+      premiere image, et pour que les barres systeme suivent le fond.
+    -->
+    <style name="Theme.BlockerSpike" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:statusBarColor">@color/window_background</item>
+        <item name="android:navigationBarColor">@color/window_surface</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
 </resources>
