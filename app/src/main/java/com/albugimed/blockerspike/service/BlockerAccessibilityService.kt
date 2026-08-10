@@ -144,7 +144,9 @@ class BlockerAccessibilityService : AccessibilityService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = Notification.Builder(this, App.CHANNEL_BLOCK)
-            .setSmallIcon(R.drawable.ic_launcher)
+            // La barre d'etat ne garde qu'une silhouette : une icone de
+            // lancement pleine y devenait un rectangle blanc sans forme.
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(getString(R.string.notif_blocked_title))
             .setContentText(getString(R.string.notif_blocked_text, pkg))
             .setContentIntent(pending)

@@ -1,11 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Ces deux couleurs ne servent qu'a la fenetre elle-meme : fond avant que
-  Compose ait dessine, et barres systeme. Le reste de la palette vit dans
-  `ui/theme/Color.kt`. Les valeurs doivent rester identiques a
-  SoftSlate.Page et SoftSlate.Card, sinon l'ecran clignote au lancement.
+  Ces couleurs ne servent qu'a la fenetre elle-meme et a l'icone : fond avant
+  que Compose ait dessine, barres systeme, aplat du lanceur. Le reste de la
+  palette vit dans `ui/theme/Color.kt`. Les valeurs doivent rester identiques
+  a `ForetJour.Page` et `ForetJour.Card`, sinon l'ecran clignote au lancement.
 -->
 <resources>
-    <color name="window_background">#E8EBF1</color>
+    <!--
+      #E8EBF1 trainait ici depuis la palette « ardoise » d'avant la refonte, et
+      c'etait precisement le clignotement bleute d'un dixieme de seconde au
+      lancement, avant que la page verte n'apparaisse.
+    -->
+    <color name="window_background">#E8EEE4</color>
     <color name="window_surface">#FFFFFF</color>
+
+    <!-- Le vert du tiroir, `Protection.Drawer`. Le citron s'y pose a 9,4:1. -->
+    <color name="ic_launcher_background">#19392B</color>
 </resources>

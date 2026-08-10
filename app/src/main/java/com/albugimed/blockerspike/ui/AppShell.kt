@@ -24,8 +24,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
@@ -84,23 +86,56 @@ import kotlinx.coroutines.launch
  * qu'elles etaient dans « Plus ». Le tiroir les montre toutes, d'un coup, avec
  * leur nom et leur icone, et rend le hub inutile.
  *
- * `INSTRUMENTS` n'y figure pas : c'est une page de diagnostic, on l'ouvre
- * depuis les reglages quand quelque chose ne va pas, jamais dans le cours
- * normal d'une journee.
+ * Chaque destination declare la [NavFamily] a laquelle elle appartient. Une
+ * destination sans famille ne figure pas dans le corps du tiroir : soit elle
+ * le precede (`TODAY`), soit elle ne s'y ouvre pas du tout (`INSTRUMENTS`).
  */
 enum class AppDestination(
     val label: String,
     val icon: AppIcon,
-    val inDrawer: Boolean = true,
+    val family: NavFamily? = null,
 ) {
+    /** La porte : elle n'appartient a aucune famille et les precede. */
     TODAY("Aujourd'hui", AppIcon.GRID),
-    QUEUE("À faire", AppIcon.CHECKLIST),
-    AGENDA("Agenda", AppIcon.CALENDAR),
-    READINGS("Lectures", AppIcon.BOOK),
-    NOTES("Notes", AppIcon.FILE),
-    BLOCKING("Blocage", AppIcon.SHIELD),
-    MORE("Réglages", AppIcon.SLIDERS),
-    INSTRUMENTS("Instruments", AppIcon.MORE, inDrawer = false),
+
+    QUEUE("À faire", AppIcon.CHECKLIST, NavFamily.ORGANISATION),
+    AGENDA("Agenda", AppIcon.CALENDAR, NavFamily.ORGANISATION),
+    NOTES("Notes", AppIcon.FILE, NavFamily.NOTES),
+    READINGS("Lectures", AppIcon.BOOK, NavFamily.EXTRASCOLAIRE),
+    BLOCKING("Blocage", AppIcon.SHIELD, NavFamily.REGLAGES),
+    MORE("Appareil", AppIcon.SLIDERS, NavFamily.REGLAGES),
+
+    /**
+     * Page de diagnostic, sans famille : on l'ouvre depuis les reglages quand
+     * quelque chose ne va pas, jamais dans le cours normal d'une journee.
+     */
+    INSTRUMENTS("Instruments", AppIcon.MORE),
+}
+
+/**
+ * Les cinq regroupements du brief, section 5 — les memes que dans l'atelier
+ * web, dans le meme ordre et sous les memes mots.
+ *
+ * **Les cinq sont la des maintenant, y compris les vides.** C'est la contrainte
+ * posee par le brief : l'ossature doit tenir avec des sections partiellement
+ * remplies « sans en faire une promesse trompeuse, et surtout sans avoir a
+ * etre redessinee quand elles se rempliront ». Un tiroir a trois familles
+ * aujourd'hui et cinq demain, ce serait exactement la refonte a eviter.
+ *
+ * Un groupe vide montre donc son titre et une ligne grise qui dit ce qui y
+ * viendra : rien ne se clique, aucune date n'est promise, et la place est
+ * prise.
+ *
+ * [ETUDES] est vide sur le telephone et ne l'est pas sur le web : les matieres
+ * et la revue se travaillent a l'atelier. Ce n'est pas un oubli — le telephone
+ * sert a faire et a noter, pas a ranger.
+ */
+enum class NavFamily(val title: String, val empty: String? = null) {
+    ORGANISATION("Organisation"),
+    ETUDES("Études", empty = "Les matières et la revue se tiennent à l'atelier."),
+    NOTES("Notes"),
+    EXTRASCOLAIRE("Extrascolaire"),
+    REGLAGES("Réglages"),
 }
 
 @Composable
@@ -323,18 +358,7 @@ private fun AppDrawer(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(11.dp),
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .background(Citron.Vif, RoundedCornerShape(10.dp)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        "A",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Protection.Drawer,
-                    )
-                }
+                LogoMark()
                 Text(
                     "Albugimed",
                     style = MaterialTheme.typography.titleMedium,
@@ -344,15 +368,62 @@ private fun AppDrawer(
 
             Spacer(Modifier.height(18.dp))
 
-            AppDestination.entries.filter { it.inDrawer }.forEach { entry ->
+            /*
+             * La carte defile.
+             *
+             * Sept destinations tenaient a plat ; les memes rangees en cinq
+             * familles ajoutent cinq titres et leurs respirations, et sur un
+             * ecran court la derniere famille — les reglages — passait sous le
+             * bord. Un menu dont la fin est invisible ne montre plus tout, ce
+             * qui etait justement la raison de remplacer la barre du bas.
+             */
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                // La porte, avant les familles et detachee d'elles.
                 DrawerItem(
-                    entry = entry,
-                    selected = entry == current,
-                    onClick = { onSelect(entry) },
+                    entry = AppDestination.TODAY,
+                    selected = current == AppDestination.TODAY,
+                    onClick = { onSelect(AppDestination.TODAY) },
                 )
-            }
 
-            Spacer(Modifier.weight(1f))
+                NavFamily.entries.forEach { family ->
+                    val entries = AppDestination.entries.filter { it.family == family }
+
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        family.title.uppercase(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Protection.OnActiveOutline,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    )
+
+                    if (entries.isEmpty()) {
+                        // Sans destination, la famille garde sa place et ne se
+                        // clique pas. Pas de « a venir », pas de date : la
+                        // phrase dit ou la chose se trouve, et l'ossature
+                        // n'aura pas a bouger le jour ou l'ecran existera.
+                        Text(
+                            family.empty.orEmpty(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Protection.OnActiveOutline,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                        )
+                    } else {
+                        entries.forEach { entry ->
+                            DrawerItem(
+                                entry = entry,
+                                selected = entry == current,
+                                onClick = { onSelect(entry) },
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(18.dp))
+            }
 
             Row(
                 modifier = Modifier.padding(horizontal = 12.dp),
@@ -374,6 +445,34 @@ private fun AppDrawer(
                     color = Protection.OnActiveKicker,
                 )
             }
+        }
+    }
+}
+
+/**
+ * La marque : trois barres inegales, comme trois piles de travail.
+ *
+ * C'est le meme dessin que dans la colonne de l'atelier web et que dans
+ * l'icone de lancement — trois rapports 8/14/10, alignes par le bas. Le carre
+ * citron marque d'un « A » qu'elle remplace etait une lettre posee dans une
+ * boite : lisible, mais sans rapport avec le reste de l'identite.
+ *
+ * Le citron ne sert qu'a la marque et a l'element ouvert. Il ne dit jamais un
+ * etat d'avancement — sinon il classerait (cadrage §1.1).
+ */
+@Composable
+private fun LogoMark(tint: Color = Citron.Vif) {
+    Row(
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        listOf(11, 19, 14).forEach { barHeight ->
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(barHeight.dp)
+                    .background(tint, RoundedCornerShape(2.dp)),
+            )
         }
     }
 }

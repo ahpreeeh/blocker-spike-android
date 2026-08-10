@@ -190,7 +190,11 @@ fun SettingsScreen(onOpen: (AppDestination) -> Unit) {
     ) {
         item {
             ScreenHeader(
-                title = "Réglages",
+                // « Appareil » et non « Réglages » : le tiroir range maintenant
+                // cette page *dans* une famille qui porte ce nom, et un écran
+                // homonyme de sa section se lit comme un doublon. C'est bien de
+                // l'appareil qu'il s'agit — autorisations, Device Owner, batterie.
+                title = "Appareil",
                 subtitle = "Ce qui se règle une fois pour tenir ensuite tout seul.",
             )
         }

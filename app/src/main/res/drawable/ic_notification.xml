@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  La marque a la taille de la barre d'etat.
+
+  Ce n'est pas le fichier de lancement redimensionne : dans une icone
+  adaptative, la marque n'occupe que le tiers du carre parce que le systeme
+  rogne les bords. Ici rien n'est rogne, et la meme proportion donnerait un
+  dessin minuscule perdu au centre. Les memes trois barres remplissent donc
+  le carre de 24, aux memes rapports 8/14/10.
+
+  Le blanc est la convention : Android ne garde que la silhouette d'une icone
+  de notification et la reteint lui-meme.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFF">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M4.5,10.6 h1 a1.5,1.5 0 0 1 1.5,1.5 v8.4 a1.5,1.5 0 0 1 -1.5,1.5 h-1 a1.5,1.5 0 0 1 -1.5,-1.5 v-8.4 a1.5,1.5 0 0 1 1.5,-1.5 z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M11.5,2 h1 a1.5,1.5 0 0 1 1.5,1.5 v17 a1.5,1.5 0 0 1 -1.5,1.5 h-1 a1.5,1.5 0 0 1 -1.5,-1.5 v-17 a1.5,1.5 0 0 1 1.5,-1.5 z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M18.5,7.7 h1 a1.5,1.5 0 0 1 1.5,1.5 v11.3 a1.5,1.5 0 0 1 -1.5,1.5 h-1 a1.5,1.5 0 0 1 -1.5,-1.5 v-11.3 a1.5,1.5 0 0 1 1.5,-1.5 z" />
+</vector>

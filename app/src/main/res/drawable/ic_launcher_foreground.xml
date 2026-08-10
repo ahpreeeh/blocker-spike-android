@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  La marque : trois barres inegales, comme trois piles de travail.
+
+  Meme dessin que la colonne de l'atelier web et que l'en-tete du tiroir —
+  rapports 8/14/10, alignees par le bas, coins arrondis. Ce qu'elle remplace
+  etait le bouclier bleu livre par defaut avec le projet : une icone qui ne
+  disait ni l'application ni son identite, et dont le bleu etait la seule
+  couleur froide de tout le produit.
+
+  Le carre est celui des icones adaptatives : 108 de cote, dont seuls les 66
+  du centre sont surement visibles — le systeme rogne le reste selon la forme
+  du lanceur. Les barres tiennent dans un rectangle de 42 x 42 pose sur
+  x 33..75 et y 34..76, soit entierement dans cette zone sure (21..87).
+
+  Barres de 10 de large, 6 d'ecart, coins de 3. Hauteurs 24 / 42 / 30, soit
+  exactement les rapports 8/14/10 du dessin d'origine.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- La courte, a gauche. -->
+    <path
+        android:fillColor="#CEF16E"
+        android:pathData="M36,52 h4 a3,3 0 0 1 3,3 v18 a3,3 0 0 1 -3,3 h-4 a3,3 0 0 1 -3,-3 v-18 a3,3 0 0 1 3,-3 z" />
+    <!-- La grande, au centre. -->
+    <path
+        android:fillColor="#CEF16E"
+        android:pathData="M52,34 h4 a3,3 0 0 1 3,3 v36 a3,3 0 0 1 -3,3 h-4 a3,3 0 0 1 -3,-3 v-36 a3,3 0 0 1 3,-3 z" />
+    <!-- La moyenne, a droite. -->
+    <path
+        android:fillColor="#CEF16E"
+        android:pathData="M68,46 h4 a3,3 0 0 1 3,3 v24 a3,3 0 0 1 -3,3 h-4 a3,3 0 0 1 -3,-3 v-24 a3,3 0 0 1 3,-3 z" />
+</vector>

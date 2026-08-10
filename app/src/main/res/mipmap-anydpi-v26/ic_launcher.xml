@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  L'icone de lancement, en trois couches.
+
+  Le fond est le vert profond du tiroir (`Protection.Drawer`, #19392B) et non
+  une teinte inventee pour l'occasion : c'est deja le plan le plus sombre de
+  l'application, celui qui passe par-dessus tout le reste. Le citron s'y pose
+  a 9,4:1, largement au-dessus de ce qu'il faut pour un aplat.
+
+  La couche `monochrome` sert quand le systeme reteint les icones a la couleur
+  du fond d'ecran : sans elle, Android inventerait lui-meme une silhouette a
+  partir du dessin colore, souvent en gardant le carre plein.
+
+  Ce dossier est `-v26` par convention ; l'application demande de toute facon
+  au minimum l'API 36, donc c'est toujours ce fichier qui est lu.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+</adaptive-icon>
