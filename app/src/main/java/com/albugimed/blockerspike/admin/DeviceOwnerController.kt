@@ -6,20 +6,43 @@ import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.UserManager
 import com.albugimed.blockerspike.BuildConfig
 import com.albugimed.blockerspike.policy.PolicyState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.security.MessageDigest
+
+/**
+ * Le résolveur imposé à tout l'appareil.
+ *
+ * CleanBrowsing « Family » : contenu adulte, sites de proxy et de VPN, et
+ * recherche sécurisée forcée — écartés avant même que la requête sorte du
+ * téléphone. Il ferme en plus la porte par laquelle on chercherait de quoi le
+ * contourner, ce qu'AdGuard laissait ouverte. En échange il ne filtre pas la
+ * publicité : c'est un filtre de contenu, pas un bloqueur de pub.
+ *
+ * Le choix du serveur est ici et nulle part ailleurs — il n'est pas réglable,
+ * c'est tout l'intérêt. En changer demande une reconstruction.
+ */
+private const val PRIVATE_DNS_HOST = "family-filter-dns.cleanbrowsing.org"
 
 data class DeviceOwnerRuntimeState(
     val adminActive: Boolean = false,
     val deviceOwner: Boolean = false,
     val backupServiceEnabled: Boolean = false,
     val exactAlarmsAllowed: Boolean = false,
+    /** Le résolveur réellement en vigueur, tel qu'Android le rapporte. */
+    val privateDnsHost: String? = null,
+    /** Vrai quand le réglage est hors de portée des Réglages Android. */
+    val privateDnsLocked: Boolean = false,
+    /** Vrai quand aucune application ne peut plus ouvrir de tunnel VPN. */
+    val vpnLocked: Boolean = false,
     val managedTargetCount: Int = 0,
     val suspendedPackages: Set<String> = emptySet(),
     val lastReconcileAtMillis: Long? = null,
@@ -80,6 +103,7 @@ class DeviceOwnerController(context: Context) {
             } catch (_: Exception) {
                 false
             }
+            val resolverError = enforceResolverLock()
 
             // A non-exact fallback can outlive a short allowance by tens of
             // minutes. Ignore all allowances until Android grants exact alarms.
@@ -98,6 +122,7 @@ class DeviceOwnerController(context: Context) {
             val nextManaged = currentTargets.toMutableSet()
             val errors = mutableListOf<String>()
             backupServiceError?.let(errors::add)
+            resolverError?.let(errors::add)
 
             desired.forEach { (packageName, shouldSuspend) ->
                 try {
@@ -128,6 +153,9 @@ class DeviceOwnerController(context: Context) {
                 deviceOwner = true,
                 backupServiceEnabled = backupServiceEnabled,
                 exactAlarmsAllowed = exactAlarmsAllowed,
+                privateDnsHost = readPrivateDnsHost(),
+                privateDnsLocked = hasRestriction(UserManager.DISALLOW_CONFIG_PRIVATE_DNS),
+                vpnLocked = hasRestriction(UserManager.DISALLOW_CONFIG_VPN),
                 managedTargetCount = nextManaged.size,
                 suspendedPackages = actualSuspended,
                 lastReconcileAtMillis = nowMillis,
@@ -253,6 +281,63 @@ class DeviceOwnerController(context: Context) {
         }
     }
 
+    /**
+     * Impose le résolveur, puis retire le réglage des mains de l'utilisateur.
+     *
+     * L'ordre compte. Android valide l'hôte sur le réseau avant de l'accepter :
+     * poser le verrou d'abord enfermerait l'appareil sur le résolveur en place —
+     * possiblement aucun — sans plus pouvoir en changer depuis les Réglages.
+     * On ne ferme la porte qu'une fois le bon serveur derrière.
+     *
+     * Cette validation réseau dure parfois plusieurs secondes et n'a donc rien
+     * à faire sur le fil principal.
+     *
+     * Un échec n'est pas définitif : hors réseau, l'hôte ne répond pas et la
+     * pose échoue. La réconciliation repasse au démarrage et à chaque réveil de
+     * la politique, et la reprend.
+     *
+     * Le VPN se ferme dans le même geste, et pour la même raison : une
+     * application VPN détourne toutes les requêtes de nom vers son propre
+     * tunnel, ce qui suffit à contourner le résolveur sans toucher au réglage
+     * verrouillé. L'interdire ici, et pas ailleurs, dit qu'elle ne vaut que
+     * tant que le résolveur tient — si celui-ci n'a pas pu être posé, fermer le
+     * VPN n'aurait rien filtré et seulement retiré quelque chose.
+     */
+    private suspend fun enforceResolverLock(): String? = withContext(Dispatchers.IO) {
+        try {
+            val alreadySet = dpm.getGlobalPrivateDnsMode(admin) ==
+                DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME &&
+                dpm.getGlobalPrivateDnsHost(admin) == PRIVATE_DNS_HOST
+            if (!alreadySet) {
+                val outcome = dpm.setGlobalPrivateDnsModeSpecifiedHost(admin, PRIVATE_DNS_HOST)
+                if (outcome != DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
+                    return@withContext when (outcome) {
+                        DevicePolicyManager.PRIVATE_DNS_SET_ERROR_HOST_NOT_SERVING ->
+                            "DNS $PRIVATE_DNS_HOST injoignable, verrou non pose"
+                        else -> "DNS refuse par Android (code $outcome)"
+                    }
+                }
+            }
+            dpm.addUserRestriction(admin, UserManager.DISALLOW_CONFIG_PRIVATE_DNS)
+            dpm.addUserRestriction(admin, UserManager.DISALLOW_CONFIG_VPN)
+            null
+        } catch (error: Exception) {
+            "Resolveur: ${error.javaClass.simpleName}"
+        }
+    }
+
+    private fun readPrivateDnsHost(): String? = try {
+        dpm.getGlobalPrivateDnsHost(admin)
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun hasRestriction(key: String): Boolean = try {
+        dpm.getUserRestrictions(admin).getBoolean(key)
+    } catch (_: Exception) {
+        false
+    }
+
     private fun readRuntime(): DeviceOwnerRuntimeState {
         val deviceOwner = dpm.isDeviceOwnerApp(appContext.packageName)
         val backupServiceEnabled = if (deviceOwner) {
@@ -269,6 +354,9 @@ class DeviceOwnerController(context: Context) {
             deviceOwner = deviceOwner,
             backupServiceEnabled = backupServiceEnabled,
             exactAlarmsAllowed = alarmManager.canScheduleExactAlarms(),
+            privateDnsHost = if (deviceOwner) readPrivateDnsHost() else null,
+            privateDnsLocked = deviceOwner && hasRestriction(UserManager.DISALLOW_CONFIG_PRIVATE_DNS),
+            vpnLocked = deviceOwner && hasRestriction(UserManager.DISALLOW_CONFIG_VPN),
             managedTargetCount = preferences
                 .getStringSet(KEY_MANAGED_PACKAGES, emptySet())
                 .orEmpty()

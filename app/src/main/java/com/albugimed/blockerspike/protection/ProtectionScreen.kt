@@ -86,6 +86,46 @@ fun ProtectionScreen() {
             )
         }
 
+        // Un état, pas un réglage. La carte dit ce qui est en vigueur ; il n'y a
+        // volontairement aucun interrupteur — un verrou qu'on peut ouvrir depuis
+        // l'écran qui l'affiche n'est pas un verrou.
+        item {
+            Section(title = "Résolveur imposé", kicker = "DNS et VPN") {
+                Text(
+                    ownerRuntime.privateDnsHost ?: "—",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    if (ownerRuntime.privateDnsLocked) {
+                        "Verrouillé : le réglage DNS privé n'est plus modifiable " +
+                            "dans les Réglages Android."
+                    } else {
+                        "Pas encore verrouillé. La pose se reprend au démarrage " +
+                            "et dès que le réseau revient."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = mutedColor,
+                )
+                Text(
+                    if (ownerRuntime.vpnLocked) {
+                        "Aucun VPN ne peut être autorisé : c'est la seule façon de " +
+                            "détourner les requêtes sans toucher au réglage verrouillé."
+                    } else {
+                        "VPN encore autorisé : une application VPN détournerait " +
+                            "les requêtes et le filtre ne verrait plus rien."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = mutedColor,
+                )
+                Text(
+                    "Contenu adulte, sites de proxy et de VPN, recherche sécurisée " +
+                        "forcée : écartés avant que la requête quitte le téléphone.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = mutedColor,
+                )
+            }
+        }
+
         item {
             Section(title = "Ce qui reste fermé", kicker = "Liste") {
                 if (blocked.isEmpty()) {
