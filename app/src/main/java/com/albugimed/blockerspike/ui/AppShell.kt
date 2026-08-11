@@ -62,6 +62,7 @@ import com.albugimed.blockerspike.study.AgendaScreen
 import com.albugimed.blockerspike.study.DeclareActivity
 import com.albugimed.blockerspike.study.StudyDependencies
 import com.albugimed.blockerspike.study.StudyQueueScreen
+import com.albugimed.blockerspike.study.SubjectsScreen
 import com.albugimed.blockerspike.sync.QueueItem
 import com.albugimed.blockerspike.ui.settings.InstrumentsScreen
 import com.albugimed.blockerspike.ui.settings.SettingsScreen
@@ -75,12 +76,12 @@ import kotlinx.coroutines.launch
  * Les endroits ou l'application peut se trouver.
  *
  * Pas de bibliotheque de navigation : le contrat §10 interdit d'ajouter une
- * dependance, et huit destinations sans historique profond n'en demandent pas.
+ * dependance, et neuf destinations sans historique profond n'en demandent pas.
  * Un `enum` et un `when` font exactement le travail, et la destination survit
  * a la rotation par `rememberSaveable`.
  *
  * **Le tiroir remplace la barre du bas**, et ce n'est pas un gout : la barre
- * tenait quatre onglets, l'application a sept pages. Les trois qui ne
+ * tenait quatre onglets, l'application en a huit a montrer. Celles qui ne
  * rentraient pas etaient rangees derriere « Plus », c'est-a-dire derriere un
  * mot qui ne dit rien — pour atteindre ses lectures il fallait deviner
  * qu'elles etaient dans « Plus ». Le tiroir les montre toutes, d'un coup, avec
@@ -100,6 +101,7 @@ enum class AppDestination(
 
     QUEUE("À faire", AppIcon.CHECKLIST, NavFamily.ORGANISATION),
     AGENDA("Agenda", AppIcon.CALENDAR, NavFamily.ORGANISATION),
+    SUBJECTS("Matières", AppIcon.FOLDER, NavFamily.ETUDES),
     NOTES("Notes", AppIcon.FILE, NavFamily.NOTES),
     READINGS("Lectures", AppIcon.BOOK, NavFamily.EXTRASCOLAIRE),
     BLOCKING("Blocage", AppIcon.SHIELD, NavFamily.REGLAGES),
@@ -126,13 +128,14 @@ enum class AppDestination(
  * viendra : rien ne se clique, aucune date n'est promise, et la place est
  * prise.
  *
- * [ETUDES] est vide sur le telephone et ne l'est pas sur le web : les matieres
- * et la revue se travaillent a l'atelier. Ce n'est pas un oubli — le telephone
- * sert a faire et a noter, pas a ranger.
+ * [ETUDES] s'est remplie la premiere, et c'est la demonstration que l'ossature
+ * tenait : la famille etait deja la, il n'y a eu qu'a poser Matieres dedans.
+ * Sa phrase d'attente a disparu avec elle — une famille qui a des entrees ne
+ * doit pas continuer a annoncer ce qui viendra, elle est arrivee.
  */
 enum class NavFamily(val title: String, val empty: String? = null) {
     ORGANISATION("Organisation"),
-    ETUDES("Études", empty = "Les matières et la revue se tiennent à l'atelier."),
+    ETUDES("Études"),
     NOTES("Notes"),
     EXTRASCOLAIRE("Extrascolaire"),
     REGLAGES("Réglages"),
@@ -225,6 +228,8 @@ fun AppShell() {
                         )
 
                         AppDestination.AGENDA -> AgendaScreen(repository = repository)
+
+                        AppDestination.SUBJECTS -> SubjectsScreen(repository = repository)
 
                         AppDestination.MORE -> SettingsScreen(
                             onOpen = { destination = it },

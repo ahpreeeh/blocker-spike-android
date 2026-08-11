@@ -59,7 +59,32 @@ data class AcademicNodeRef(
     val label: String,
     val kind: AcademicNodeKind,
     val parentId: String?,
+    /** Absent d'un serveur ou d'un cache anterieur : [NodeProgress.NONE]. */
+    val progress: NodeProgress = NodeProgress.NONE,
 )
+
+/**
+ * Les dimensions de progression d'un noeud, calculees par le serveur.
+ *
+ * Elles arrivent **separees et le restent** : il n'existe aucun endroit ou les
+ * fondre en un pourcentage unique, et l'ecran n'en fabrique pas (P4-01 point 7).
+ *
+ * `null` veut dire « aucune trace », jamais « zero ». C'est la distinction du
+ * cadrage §1.2, et elle survit au transport : le serveur envoie `null`, le
+ * cache conserve `null`, l'affichage rend « — ». Remplacer un `null` par 0 ici
+ * transformerait « je n'ai rien declare » en « j'ai fait zero revision ».
+ */
+data class NodeProgress(
+    val courseStudied: Boolean = false,
+    val revisionCount: Int? = null,
+    val trainingCount: Int? = null,
+    val errorCount: Int? = null,
+    val freshnessDays: Int? = null,
+) {
+    companion object {
+        val NONE = NodeProgress()
+    }
+}
 
 data class ResourceRef(
     val resourceId: String,
@@ -168,6 +193,7 @@ object QueueSnapshotJson {
                     .put("kind", node.kind.wireName)
                     .apply {
                         put("parent_id", node.parentId ?: JSONObject.NULL)
+                        put("progress", encodeProgress(node.progress))
                     },
             )
         }
@@ -231,6 +257,26 @@ object QueueSnapshotJson {
             label = json.optStringOrNull("label") ?: nodeId,
             kind = kind,
             parentId = parentId,
+            progress = decodeProgress(json.optJSONObject("progress")),
+        )
+    }
+
+    /**
+     * Un bloc absent ou illisible donne [NodeProgress.NONE], et le noeud reste
+     * affichable. C'est voulu : une progression manquante n'est pas une raison
+     * de faire disparaitre un chapitre de la liste des matieres.
+     */
+    private fun decodeProgress(json: JSONObject?): NodeProgress {
+        if (json == null) return NodeProgress.NONE
+        return NodeProgress(
+            courseStudied = json.optBoolean("course_studied", false),
+            revisionCount = json.strictInt("revision_count")?.takeIf { it > 0 },
+            trainingCount = json.strictInt("training_count")?.takeIf { it > 0 },
+            errorCount = json.strictInt("error_count")?.takeIf { it > 0 },
+            // Une fraicheur de 0 jour est un fait — « declare aujourd'hui » —
+            // la ou un compte de 0 n'en est pas un. Les deux ne se filtrent
+            // donc pas de la meme facon.
+            freshnessDays = json.strictInt("freshness_days")?.takeIf { it >= 0 },
         )
     }
 
@@ -317,6 +363,19 @@ object QueueSnapshotJson {
 
     private fun encodeNode(node: NodeRef): JSONObject =
         JSONObject().put("node_id", node.nodeId).put("label", node.label)
+
+    /**
+     * `JSONObject.NULL` explicite, et non la clef omise : relu, un `null` doit
+     * redonner `null` et non retomber sur une valeur par defaut. C'est la
+     * meme exigence que du cote serveur, de l'autre bout du meme fil.
+     */
+    private fun encodeProgress(progress: NodeProgress): JSONObject =
+        JSONObject()
+            .put("course_studied", progress.courseStudied)
+            .put("revision_count", progress.revisionCount ?: JSONObject.NULL)
+            .put("training_count", progress.trainingCount ?: JSONObject.NULL)
+            .put("error_count", progress.errorCount ?: JSONObject.NULL)
+            .put("freshness_days", progress.freshnessDays ?: JSONObject.NULL)
 
     private fun encodeSignals(signals: QueueSignals): JSONObject {
         val json = JSONObject()

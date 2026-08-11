@@ -145,6 +145,45 @@ class QueueSnapshotJsonTest {
     }
 
     @Test
+    fun unNoeudSansBlocDeProgressionResteAffichable() {
+        // `corps` ne porte pas de `progress` : c'est exactement ce qu'un cache
+        // écrit par une version antérieure contient. Les nœuds doivent rester
+        // lisibles, une progression manquante n'efface pas un chapitre.
+        val nodes = QueueSnapshotJson.decode(corps)!!.nodes
+
+        assertEquals(3, nodes.size)
+        nodes.forEach { assertEquals(NodeProgress.NONE, it.progress) }
+    }
+
+    @Test
+    fun lAbsenceDeTraceSurvitAuCacheSansDevenirZero() {
+        val snapshot = QueueSnapshotJson.decode(
+            """{"generated_at":"x","items":[],"nodes":[
+                 {"node_id":"nod_1","label":"Cardiologie","kind":"subject",
+                  "parent_id":null,
+                  "progress":{"course_studied":true,"revision_count":2,
+                              "training_count":null,"error_count":0,
+                              "freshness_days":0}}
+               ]}""",
+        )!!
+        val progress = snapshot.nodes.single().progress
+
+        assertTrue(progress.courseStudied)
+        assertEquals(2, progress.revisionCount)
+        assertNull(progress.trainingCount)
+        // Un compte de 0 n'est pas un fait : le serveur n'en envoie pas, et s'il
+        // en arrivait un il vaut « aucune trace », pas « zéro entraînement ».
+        assertNull(progress.errorCount)
+        // Une fraîcheur de 0 jour, elle, est un fait : « déclaré aujourd'hui ».
+        assertEquals(0, progress.freshnessDays)
+
+        // L'aller-retour par le cache ne doit rien inventer : un `null` relu
+        // reste `null` et ne retombe pas sur une valeur par défaut.
+        val reread = QueueSnapshotJson.decode(QueueSnapshotJson.encode(snapshot))!!
+        assertEquals(progress, reread.nodes.single().progress)
+    }
+
+    @Test
     fun lIdentifiantDAppareilSeLitDansLaMemeReponse() {
         assertEquals("poco-x7", QueueSnapshotJson.deviceIdOf(corps))
         assertNull(QueueSnapshotJson.deviceIdOf("""{"items":[]}"""))
