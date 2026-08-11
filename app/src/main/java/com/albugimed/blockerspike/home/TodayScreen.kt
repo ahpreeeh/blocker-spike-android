@@ -21,7 +21,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -31,8 +30,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.albugimed.blockerspike.Graph
-import com.albugimed.blockerspike.policy.PolicyState
 import com.albugimed.blockerspike.reader.ReaderActivity
 import com.albugimed.blockerspike.reader.ReadingPosition
 import com.albugimed.blockerspike.study.AgendaRowBlock
@@ -42,6 +39,9 @@ import com.albugimed.blockerspike.study.StepSheet
 import com.albugimed.blockerspike.study.StudyQueueState
 import com.albugimed.blockerspike.study.StudyRepository
 import com.albugimed.blockerspike.study.buildAgendaHeaderPresentation
+import com.albugimed.blockerspike.study.buildPathView
+import com.albugimed.blockerspike.study.nextRows
+import com.albugimed.blockerspike.study.pathCountsLabel
 import com.albugimed.blockerspike.study.pendingLabel
 import com.albugimed.blockerspike.sync.QueueItem
 import com.albugimed.blockerspike.sync.SyncState
@@ -51,35 +51,36 @@ import com.albugimed.blockerspike.ui.Kicker
 import com.albugimed.blockerspike.ui.Notice
 import com.albugimed.blockerspike.ui.NoticeTone
 import com.albugimed.blockerspike.ui.PrimaryAction
-import com.albugimed.blockerspike.ui.ProtectionCard
 import com.albugimed.blockerspike.ui.ScreenHeader
 import com.albugimed.blockerspike.ui.SecondaryAction
 import com.albugimed.blockerspike.ui.Section
 import com.albugimed.blockerspike.ui.SurfaceCard
 import com.albugimed.blockerspike.ui.mutedColor
 import com.albugimed.blockerspike.ui.theme.LocalAlbugimedExtras
-import kotlinx.coroutines.launch
 
 /**
  * L'accueil, refait sur ce que le brouillon demande.
  *
- * Quatre choses, dans cet ordre : **l'etat du blocage**, **ce qu'il y a a
- * faire**, la **prochaine echeance**, les **48 heures**. Rien d'autre — c'est
- * un ecran qu'on regarde debout, pas un tableau de bord.
+ * Trois choses, dans cet ordre : **les prochains chapitres du parcours**, la
+ * **prochaine echeance**, les **48 heures**. Rien d'autre — c'est un ecran
+ * qu'on regarde debout, pas un tableau de bord.
  *
- * Le blocage passe en premier parce que c'est la seule chose ici dont l'effet
- * se produit **en dehors** de l'application : tout le reste est une lecture de
- * ce que l'atelier a decide ailleurs. La capture, elle, tient dans l'en-tete :
- * elle sert quelques secondes, pas au terme d'un defilement — et un bouton
- * flottant se posait par-dessus les cartes, masquant du texte en plein milieu
- * de la liste.
+ * **La carte de blocage n'est plus ici.** Elle ouvrait l'accueil sur un etat
+ * qui ne change presque jamais et qui ne demande rien : « les refus tiennent »
+ * occupait le premier ecran pour dire, chaque jour, la meme chose. Le blocage
+ * reste entier et reste joignable — page Blocage, dans le tiroir — il a
+ * seulement cesse d'etre la premiere chose qu'on lit en ouvrant l'application.
+ * Ce qu'on vient y chercher, c'est ce qu'on a a faire.
  *
  * Le travail se presente en **liste**, plus en fiche. La version precedente
  * ouvrait l'accueil sur une seule etape detaillee, avec ses deux faits
  * etiquetes et ses trois boutons : elle repondait « par quoi je commence » mais
  * cachait tout le reste, et il fallait changer d'onglet pour savoir ce qui
  * suivait. Quatre lignes tiennent dans la meme hauteur et disent la meme chose
- * plus une : **ou j'en suis dans ma liste**.
+ * plus une : **ou j'en suis dans mon parcours**.
+ *
+ * Les etapes terminees ne sont pas montrees ici : l'accueil regarde devant. La
+ * page Parcours, elle, les garde a leur place, grisees.
  *
  * Ce qui n'y est pas, et n'y sera pas : un tri par urgence. L'ordre affiche est
  * celui que l'utilisateur a lui-meme donne dans l'atelier (P4-02). L'application
@@ -91,15 +92,11 @@ fun TodayScreen(
     positions: Map<String, ReadingPosition>,
     onOpenQueue: () -> Unit,
     onOpenAgenda: () -> Unit,
-    onOpenBlocking: () -> Unit,
     onOpenReadings: () -> Unit,
     onDeclare: (QueueItem) -> Unit,
     onResume: (QueueItem) -> Unit,
 ) {
     val context = LocalContext.current
-    val policyRepo = Graph.policyRepository
-    val policy by policyRepo.policy.collectAsStateWithLifecycle(initialValue = PolicyState())
-    val scope = rememberCoroutineScope()
     val queueState by repository.queueState.collectAsStateWithLifecycle(
         initialValue = StudyQueueState(),
     )
@@ -129,6 +126,7 @@ fun TodayScreen(
     // ouverte, et c'est la version rechargee qu'il faut afficher.
     var openStepId by rememberSaveable { mutableStateOf<String?>(null) }
     val openStep = queueState.items.firstOrNull { it.stepId == openStepId }
+    val path = remember(queueState) { buildPathView(queueState) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -137,15 +135,36 @@ fun TodayScreen(
     ) {
         item { ScreenHeader(title = "Aujourd'hui") }
 
+        // Le parcours en premier, parce que c'est la question qu'on se pose en
+        // ouvrant l'application : et maintenant ? Les terminees sont sautees —
+        // la page dediee les montre, l'accueil regarde devant.
         item {
-            ProtectionCard(
-                blockedCount = policy.blockedPackages.size,
-                failsafeOverride = policy.failsafeOverride,
-                storageHealthy = policy.storageHealthy,
-                onOpenProtection = onOpenBlocking,
-                onSuspend = { scope.launch { policyRepo.setFailsafeOverride(true) } },
-                onRestore = { scope.launch { policyRepo.setFailsafeOverride(false) } },
-            )
+            Section(title = "Prochains chapitres", kicker = "Parcours") {
+                val next = nextRows(path, STEP_PREVIEW)
+                if (next.isEmpty()) {
+                    Text(
+                        if (path.rows.isEmpty()) {
+                            "Le parcours est vide. Envoie des matières dedans depuis l'atelier."
+                        } else {
+                            "Tout le parcours est terminé."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = mutedColor,
+                    )
+                    SecondaryAction(text = "Ouvrir le parcours", onClick = onOpenQueue)
+                } else {
+                    next.forEachIndexed { index, row ->
+                        if (index > 0) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        }
+                        StepRow(item = row.item, onOpen = { openStepId = row.item.stepId })
+                    }
+                    SecondaryAction(
+                        text = pathCountsLabel(path),
+                        onClick = onOpenQueue,
+                    )
+                }
+            }
         }
 
         // Le document le plus recemment ouvert, et rien d'autre. Une pile de
@@ -182,35 +201,6 @@ fun TodayScreen(
             }
             item {
                 PrimaryAction(text = "Enrôler l'appareil", onClick = onOpenQueue)
-            }
-        }
-
-        item {
-            Section(title = "Dans ton ordre", kicker = "À faire") {
-                if (queueState.items.isEmpty()) {
-                    Text(
-                        "La liste en cache est vide. Choisis dans l'atelier ce que tu veux " +
-                            "travailler ensuite.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = mutedColor,
-                    )
-                    SecondaryAction(text = "Voir la liste", onClick = onOpenQueue)
-                } else {
-                    queueState.items.take(STEP_PREVIEW).forEachIndexed { index, item ->
-                        if (index > 0) {
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        }
-                        StepRow(item = item, onOpen = { openStepId = item.stepId })
-                    }
-                    SecondaryAction(
-                        text = if (queueState.items.size > STEP_PREVIEW) {
-                            "Voir les ${queueState.items.size} étapes"
-                        } else {
-                            "Voir toute la liste"
-                        },
-                        onClick = onOpenQueue,
-                    )
-                }
             }
         }
 
@@ -265,7 +255,6 @@ fun TodayScreen(
                 }
             }
         }
-
     }
 
     openStep?.let { step ->

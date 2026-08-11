@@ -180,8 +180,8 @@ private fun MissingStepScreen(onClose: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             ScreenHeader(title = "Déclaration")
-            EmptyState("Cette étape n'est plus disponible dans la file en cache.")
-            SecondaryAction(text = "Retour à la file", onClick = onClose)
+            EmptyState("Cette étape n'est plus disponible dans le parcours en cache.")
+            SecondaryAction(text = "Retour au parcours", onClick = onClose)
         }
     }
 }
@@ -205,6 +205,8 @@ internal fun DeclareScreen(
     var freeLabel by rememberSaveable { mutableStateOf("") }
     var difficultyName by rememberSaveable { mutableStateOf<String?>(null) }
     var note by rememberSaveable { mutableStateOf("") }
+    var customDuration by rememberSaveable { mutableStateOf(false) }
+    var showNote by rememberSaveable { mutableStateOf(false) }
     var validationMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var resourceError by rememberSaveable { mutableStateOf<String?>(null) }
     var saved by rememberSaveable { mutableStateOf(false) }
@@ -231,8 +233,8 @@ internal fun DeclareScreen(
         ) {
             item {
                 ScreenHeader(
-                    title = if (queueItem == null) "Déclarer hors file" else "Déclarer le travail",
-                    subtitle = "Ce que tu as réellement fait. Rien n'est deviné à ta place.",
+                    title = if (queueItem == null) "Déclarer hors parcours" else "Déclarer",
+                    subtitle = "Ce que tu as réellement fait.",
                 )
             }
             item {
@@ -269,7 +271,12 @@ internal fun DeclareScreen(
                 }
             }
             item {
-                Section("Durée") {
+                // Duree et difficulte tenaient deux cartes pour deux rangees de
+                // pastilles. La declaration se fait apres coup, souvent debout :
+                // ce qui coute ici, c'est le defilement, pas le nombre de
+                // champs. Les deux rangees se lisent d'un coup d'oeil et gardent
+                // chacune son intitule.
+                Section("Durée et difficulté") {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -278,20 +285,50 @@ internal fun DeclareScreen(
                     ) {
                         listOf(15, 30, 45, 60).forEach { minutes ->
                             FilterChip(
-                                selected = durationMinutes == minutes.toString(),
-                                onClick = { durationMinutes = minutes.toString() },
+                                selected =
+                                    !customDuration && durationMinutes == minutes.toString(),
+                                onClick = {
+                                    customDuration = false
+                                    durationMinutes = minutes.toString()
+                                },
                                 label = { Text("$minutes min") },
                             )
                         }
+                        // Le champ libre derriere une pastille plutot qu'en
+                        // permanence : quatre fois sur cinq la duree est un des
+                        // quatre nombres, et le champ ne servait qu'a occuper la
+                        // hauteur d'une ligne de saisie.
+                        FilterChip(
+                            selected = customDuration,
+                            onClick = {
+                                customDuration = !customDuration
+                                if (customDuration) durationMinutes = ""
+                            },
+                            label = { Text("Autre") },
+                        )
                     }
-                    OutlinedTextField(
-                        value = durationMinutes,
-                        onValueChange = { durationMinutes = it.filter(Char::isDigit) },
-                        label = { Text("Durée libre (minutes)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    if (customDuration) {
+                        OutlinedTextField(
+                            value = durationMinutes,
+                            onValueChange = { durationMinutes = it.filter(Char::isDigit) },
+                            label = { Text("Minutes") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                        )
+                    }
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                    )
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Difficulty.entries.forEach { difficulty ->
+                            FilterChip(
+                                selected = difficultyName == difficulty.name,
+                                onClick = { difficultyName = difficulty.name },
+                                label = { Text(difficulty.displayLabel()) },
+                            )
+                        }
+                    }
                 }
             }
             item {
@@ -371,35 +408,31 @@ internal fun DeclareScreen(
                 }
             }
             item {
-                Section("Difficulté") {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Difficulty.entries.forEach { difficulty ->
-                            FilterChip(
-                                selected = difficultyName == difficulty.name,
-                                onClick = { difficultyName = difficulty.name },
-                                label = { Text(difficulty.displayLabel()) },
-                            )
-                        }
+                // La note est facultative et l'etait deja, mais elle occupait
+                // une carte entiere et trois lignes de saisie a chaque
+                // declaration. Elle reste entiere, a un appui : c'est le seul
+                // element de l'ecran dont on peut dire qu'il ne sert presque
+                // jamais, et il prenait le plus de hauteur.
+                if (showNote || note.isNotEmpty()) {
+                    Section("Note facultative") {
+                        OutlinedTextField(
+                            value = note,
+                            onValueChange = { note = it.take(MAX_NOTE_LENGTH) },
+                            label = { Text("Note") },
+                            supportingText = if (note.length >= NOTE_COUNTER_THRESHOLD) {
+                                { Text("${note.length} / $MAX_NOTE_LENGTH") }
+                            } else {
+                                null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            minLines = 3,
+                            maxLines = 6,
+                        )
                     }
-                }
-            }
-            item {
-                Section("Note facultative") {
-                    OutlinedTextField(
-                        value = note,
-                        onValueChange = { note = it.take(MAX_NOTE_LENGTH) },
-                        label = { Text("Note") },
-                        supportingText = if (note.length >= NOTE_COUNTER_THRESHOLD) {
-                            { Text("${note.length} / $MAX_NOTE_LENGTH") }
-                        } else {
-                            null
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 3,
-                        maxLines = 6,
+                } else {
+                    SecondaryAction(
+                        text = "Ajouter une note",
+                        onClick = { showNote = true },
                     )
                 }
             }
@@ -482,7 +515,7 @@ internal fun DeclareScreen(
                             style = MaterialTheme.typography.bodyMedium,
                             color = mutedColor,
                         )
-                        SecondaryAction(text = "Retour à la file", onClick = onDone)
+                        SecondaryAction(text = "Retour au parcours", onClick = onDone)
                     }
                 }
             }
@@ -515,7 +548,7 @@ private fun FreeTargetPicker(
         Kicker("Matière")
         if (subjects.isEmpty()) {
             Text(
-                "Aucune matière disponible dans la copie locale. Actualise la file.",
+                "Aucune matière disponible dans la copie locale. Actualise le parcours.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = mutedColor,
             )

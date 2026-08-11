@@ -57,9 +57,9 @@ import java.time.format.FormatStyle
 import java.util.Locale
 
 /**
- * La file, ouverte seule.
+ * Le parcours, ouvert seul.
  *
- * Depuis V2.3 la file est surtout un onglet de la coque
+ * Depuis V2.3 le parcours est surtout un onglet de la coque
  * (`com.albugimed.blockerspike.ui.AppShell`). Cette activite reste declaree
  * pour les entrees externes — un raccourci, une notification — et se contente
  * d'habiller le meme composable. C'est pour cela que [StudyQueueScreen] ne
@@ -138,6 +138,7 @@ internal fun StudyQueueScreen(
     // ouverte, et c'est la version rechargee qu'il faut afficher.
     var openStepId by rememberSaveable { mutableStateOf<String?>(null) }
     val openStep = state.items.firstOrNull { it.stepId == openStepId }
+    val path = remember(state) { buildPathView(state) }
 
     LaunchedEffect(repository) {
         runCatching { repository.onQueueOpened() }
@@ -162,8 +163,15 @@ internal fun StudyQueueScreen(
     ) {
         item {
             ScreenHeader(
-                title = "À faire",
+                title = "Parcours",
                 subtitle = "Dans l'ordre que tu as donné. L'application ne le change pas.",
+            )
+        }
+        item {
+            Text(
+                pathCountsLabel(path),
+                style = MaterialTheme.typography.bodySmall,
+                color = mutedColor,
             )
         }
         item {
@@ -194,11 +202,11 @@ internal fun StudyQueueScreen(
         item {
             SecondaryAction(text = "Déclarer autre chose", onClick = onDeclareFree)
         }
-        if (state.items.isEmpty()) {
+        if (path.rows.isEmpty()) {
             item {
                 Text(
-                    "La liste en cache est vide. Choisis dans l'atelier ce que tu veux " +
-                        "travailler ensuite.",
+                    "Le parcours est vide. Envoie des matières dedans depuis l'atelier, " +
+                        "puis mets-les dans l'ordre que tu veux.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = mutedColor,
                 )
@@ -207,13 +215,20 @@ internal fun StudyQueueScreen(
             // Une carte, des rangs — et non une carte par etape. Chaque etape
             // occupait un ecran entier de defilement : on ne voyait jamais sa
             // liste, seulement le morceau sous le pouce.
+            //
+            // Tout est montre, terminees comprises et a leur place : c'est la
+            // difference entre un parcours et une file d'attente.
             item {
                 SurfaceCard {
-                    state.items.forEachIndexed { index, item ->
+                    path.rows.forEachIndexed { index, row ->
                         if (index > 0) {
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         }
-                        StepRow(item = item, onOpen = { openStepId = item.stepId })
+                        StepRow(
+                            item = row.item,
+                            done = row.done,
+                            onOpen = { openStepId = row.item.stepId },
+                        )
                     }
                 }
             }
@@ -256,7 +271,7 @@ private fun EnrolmentScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         ScreenHeader(
-            title = "À faire",
+            title = "Parcours",
             subtitle = "Cet appareil n'est pas encore relié à l'atelier.",
         )
         if (syncState.halted) {

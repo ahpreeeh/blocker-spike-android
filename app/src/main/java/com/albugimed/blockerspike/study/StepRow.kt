@@ -16,6 +16,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.albugimed.blockerspike.reader.ReadingPosition
@@ -55,7 +56,11 @@ internal fun StepRow(
     item: QueueItem,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
+    done: Boolean = false,
 ) {
+    // Grise et barre, sans jamais retirer de la liste ni changer de place. Une
+    // etape terminee reste lisible : c'est ce qu'on a franchi, pas un dechet.
+    val labelColor = if (done) mutedColor else MaterialTheme.colorScheme.onSurface
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -72,6 +77,8 @@ internal fun StepRow(
             Text(
                 item.label,
                 style = MaterialTheme.typography.titleMedium,
+                color = labelColor,
+                textDecoration = if (done) TextDecoration.LineThrough else null,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )

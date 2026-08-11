@@ -14,6 +14,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,6 +53,16 @@ fun SubjectsScreen(repository: StudyRepository) {
         initialValue = StudyQueueState(),
     )
     val subjects = remember(state) { buildSubjectViews(state) }
+
+    // Redemander la synchro en ouvrant la page, comme le fait l'accueil. Sans
+    // cela l'ecran n'affiche que le cache : arriver ici par le tiroir sans
+    // repasser par « Aujourd'hui » montrait un instantane d'avant le dernier
+    // deploiement, donc « aucune trace » partout alors que le serveur avait la
+    // progression. L'affichage n'attend pas la reponse : le cache reste
+    // lisible si le reseau ne repond pas.
+    LaunchedEffect(repository) {
+        runCatching { repository.onQueueOpened() }
+    }
 
     // Une seule matiere ouverte a la fois. Un accordeon plutot qu'un jeu de
     // cases : sur un telephone, trois matieres depliees font perdre la liste.

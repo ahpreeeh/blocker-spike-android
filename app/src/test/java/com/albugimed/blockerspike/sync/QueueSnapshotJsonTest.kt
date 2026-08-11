@@ -184,6 +184,35 @@ class QueueSnapshotJsonTest {
     }
 
     @Test
+    fun uneEtapeTermineeDescendAvecSaDateEtSurvitAuCache() {
+        val snapshot = QueueSnapshotJson.decode(
+            """{"generated_at":"x","nodes":[],"items":[
+                 {"step_id":"stp_1","label":"ECG","kind":"revision",
+                  "subject":{"node_id":"nod_c","label":"Cardio"},
+                  "chapter":null,"resource":null,
+                  "signals":{"last_activity_at":null,"freshness_days":null,"deadline":null},
+                  "completed_at":"2026-08-05T09:12:00Z"},
+                 {"step_id":"stp_2","label":"Pharmaco","kind":"reading",
+                  "subject":{"node_id":"nod_p","label":"Pharmaco"},
+                  "chapter":null,"resource":null,
+                  "signals":{"last_activity_at":null,"freshness_days":null,"deadline":null}}
+               ]}""",
+        )!!
+
+        // La terminée reste dans la liste, à sa place : c'est le parcours qui
+        // la grise, ce n'est pas au contrat de la faire disparaître.
+        assertEquals(listOf("stp_1", "stp_2"), snapshot.items.map { it.stepId })
+        assertEquals("2026-08-05T09:12:00Z", snapshot.items[0].completedAt)
+        // Une étape sans le champ — un cache écrit par une version antérieure —
+        // vaut « pas terminée », donc affichée normalement.
+        assertNull(snapshot.items[1].completedAt)
+
+        val reread = QueueSnapshotJson.decode(QueueSnapshotJson.encode(snapshot))!!
+        assertEquals("2026-08-05T09:12:00Z", reread.items[0].completedAt)
+        assertNull(reread.items[1].completedAt)
+    }
+
+    @Test
     fun lIdentifiantDAppareilSeLitDansLaMemeReponse() {
         assertEquals("poco-x7", QueueSnapshotJson.deviceIdOf(corps))
         assertNull(QueueSnapshotJson.deviceIdOf("""{"items":[]}"""))

@@ -39,6 +39,16 @@ data class QueueItem(
     val chapter: NodeRef?,
     val resource: ResourceRef?,
     val signals: QueueSignals,
+    /**
+     * Quand l'utilisateur a coche « termine » dans l'atelier, ou `null`.
+     *
+     * Jamais deduit du travail declare : reviser trois fois une etape ne la
+     * termine pas, et cocher une etape travaillee ailleurs est legitime. Le
+     * parcours grise ce qui porte cette date ; la vue courte le saute.
+     *
+     * Absent d'un cache anterieur : `null`, donc « pas termine », donc affiche.
+     */
+    val completedAt: String? = null,
 )
 
 data class NodeRef(val nodeId: String, val label: String)
@@ -170,6 +180,7 @@ object QueueSnapshotJson {
                 .put("kind", item.kind)
                 .put("subject", encodeNode(item.subject))
                 .put("signals", encodeSignals(item.signals))
+                .apply { item.completedAt?.let { put("completed_at", it) } }
             item.chapter?.let { json.put("chapter", encodeNode(it)) }
             item.resource?.let { resource ->
                 json.put(
@@ -309,6 +320,7 @@ object QueueSnapshotJson {
                 deadlineDate = signals?.optJSONObject("deadline")?.optStringOrNull("date"),
                 lastWork = signals?.optJSONObject("last_work")?.let(::decodeLastWork),
             ),
+            completedAt = json.optStringOrNull("completed_at"),
         )
     }
 

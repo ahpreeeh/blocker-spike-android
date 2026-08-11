@@ -99,9 +99,12 @@ enum class AppDestination(
     /** La porte : elle n'appartient a aucune famille et les precede. */
     TODAY("Aujourd'hui", AppIcon.GRID),
 
-    QUEUE("À faire", AppIcon.CHECKLIST, NavFamily.ORGANISATION),
-    AGENDA("Agenda", AppIcon.CALENDAR, NavFamily.ORGANISATION),
+    // « Parcours » et non « A faire » : la liste ne se vide plus en avancant,
+    // elle garde les etapes terminees grisees a leur place. « A faire » nommait
+    // une corbeille qui se vide ; le mot ne decrivait plus la page.
+    QUEUE("Parcours", AppIcon.CHECKLIST, NavFamily.ETUDES),
     SUBJECTS("Matières", AppIcon.FOLDER, NavFamily.ETUDES),
+    AGENDA("Agenda", AppIcon.CALENDAR, NavFamily.ORGANISATION),
     NOTES("Notes", AppIcon.FILE, NavFamily.NOTES),
     READINGS("Lectures", AppIcon.BOOK, NavFamily.EXTRASCOLAIRE),
     BLOCKING("Blocage", AppIcon.SHIELD, NavFamily.REGLAGES),
@@ -213,7 +216,6 @@ fun AppShell() {
                             positions = positions,
                             onOpenQueue = { destination = AppDestination.QUEUE },
                             onOpenAgenda = { destination = AppDestination.AGENDA },
-                            onOpenBlocking = { destination = AppDestination.BLOCKING },
                             onOpenReadings = { destination = AppDestination.READINGS },
                             onDeclare = { item -> openDeclaration(context, item) },
                             onResume = { item -> openReader(context, item) },
