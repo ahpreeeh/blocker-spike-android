@@ -7,17 +7,22 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -28,21 +33,26 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.albugimed.blockerspike.sync.NodeProgress
 import com.albugimed.blockerspike.ui.Chevron
 import com.albugimed.blockerspike.ui.EmptyState
+import com.albugimed.blockerspike.ui.Kicker
 import com.albugimed.blockerspike.ui.Notice
 import com.albugimed.blockerspike.ui.NoticeTone
 import com.albugimed.blockerspike.ui.ScreenHeader
+import com.albugimed.blockerspike.ui.SecondaryAction
 import com.albugimed.blockerspike.ui.SubjectDot
 import com.albugimed.blockerspike.ui.SurfaceCard
 import com.albugimed.blockerspike.ui.mutedColor
+import kotlinx.coroutines.launch
 
 /**
  * Les matieres et leurs chapitres, avec ce qui a deja ete declare dessus.
  *
- * **Cet ecran ne fait pas faire, il fait voir.** Le parcours dit quoi faire
- * ensuite ; les matieres disent ou l'on en est. Rien n'est donc affiche deux
- * fois, et il n'y a ici ni bouton « declarer » ni reordonnancement : les
- * ajouter ramenerait la moitie du parcours dans une page qui n'est pas la
- * sienne.
+ * **Cet ecran fait voir, et il fait verser.** Le parcours dit quoi faire
+ * ensuite ; les matieres disent ou l'on en est, et c'est d'ici qu'on y envoie
+ * du travail. Il n'y a toujours ni bouton « declarer » ni reordonnancement :
+ * declarer se fait sur l'etape, l'ordre se donne sur le parcours. Verser, en
+ * revanche, ne peut se faire qu'ici — c'est le seul endroit ou l'on voit une
+ * matiere entiere, et verser chapitre par chapitre depuis le parcours
+ * demanderait dix-huit gestes la ou il en faut un.
  *
  * Aucun pourcentage, aucun score : les cinq dimensions restent separees telles
  * que le serveur les envoie, et une dimension sans trace s'ecrit « — ».
@@ -53,6 +63,13 @@ fun SubjectsScreen(repository: StudyRepository) {
         initialValue = StudyQueueState(),
     )
     val subjects = remember(state) { buildSubjectViews(state) }
+    val scope = rememberCoroutineScope()
+    var operationError by remember { mutableStateOf<String?>(null) }
+
+    // L'identifiant plutot que l'objet : la liste se rafraichit sous la feuille
+    // ouverte, et c'est la version rechargee qu'il faut lui donner.
+    var pouringSubjectId by rememberSaveable { mutableStateOf<String?>(null) }
+    val pouringSubject = subjects.firstOrNull { it.nodeId == pouringSubjectId }
 
     // Redemander la synchro en ouvrant la page, comme le fait l'accueil. Sans
     // cela l'ecran n'affiche que le cache : arriver ici par le tiroir sans
@@ -94,6 +111,11 @@ fun SubjectsScreen(repository: StudyRepository) {
                 )
             }
         }
+        operationError?.let { error ->
+            item {
+                Notice(error, tone = NoticeTone.PROBLEM)
+            }
+        }
 
         if (subjects.isEmpty()) {
             item {
@@ -114,6 +136,73 @@ fun SubjectsScreen(repository: StudyRepository) {
                             subject.nodeId
                         }
                     },
+                    onPour = { pouringSubjectId = subject.nodeId },
+                )
+            }
+        }
+    }
+
+    pouringSubject?.let { subject ->
+        PourSheet(
+            subject = subject,
+            onDismiss = { pouringSubjectId = null },
+            onPick = { kind ->
+                pouringSubjectId = null
+                scope.launch {
+                    operationError = null
+                    runCatching { repository.pourSubject(subject.nodeId, kind) }
+                        .onFailure {
+                            operationError =
+                                "Versement non enregistré. Le parcours n'a pas bougé."
+                        }
+                }
+            },
+        )
+    }
+}
+
+/**
+ * Choisir la nature avant de verser.
+ *
+ * Quatre boutons et pas un menu deroulant : le choix **est** la question posee,
+ * et le cacher derriere un champ ferait croire qu'il y a un defaut raisonnable.
+ * Il n'y en a pas — verser une matiere en « premiere etude » ou en « revision »
+ * ne dit pas du tout la meme chose du programme.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PourSheet(
+    subject: SubjectView,
+    onDismiss: () -> Unit,
+    onPick: (String) -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Kicker("Verser dans le parcours")
+            Text(subject.label, style = MaterialTheme.typography.headlineSmall)
+            Text(
+                pourPromptLabel(subject),
+                style = MaterialTheme.typography.bodySmall,
+                color = mutedColor,
+            )
+            POUR_KINDS.forEach { kind ->
+                SecondaryAction(
+                    text = kind.displayKindLabel(),
+                    enabled = subject.chapters.isNotEmpty(),
+                    onClick = { onPick(kind) },
                 )
             }
         }
@@ -125,6 +214,7 @@ private fun SubjectCard(
     subject: SubjectView,
     expanded: Boolean,
     onToggle: () -> Unit,
+    onPour: () -> Unit,
 ) {
     SurfaceCard {
         Row(
@@ -153,7 +243,19 @@ private fun SubjectCard(
 
         NodeFacts(subject.progress)
 
+        pouringKindsLabel(subject.pouringKinds)?.let { waiting ->
+            Text(
+                waiting,
+                style = MaterialTheme.typography.bodySmall,
+                color = mutedColor,
+            )
+        }
+
         if (expanded) {
+            // Le bouton n'apparait qu'ouverte : sur une liste de dix-huit
+            // matieres fermees, dix-huit boutons feraient une page de boutons.
+            SecondaryAction(text = "Verser dans le parcours", onClick = onPour)
+
             if (subject.chapters.isEmpty()) {
                 Text(
                     "Aucun chapitre dans cette matière.",

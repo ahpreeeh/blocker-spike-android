@@ -3,6 +3,8 @@ package com.albugimed.blockerspike.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,7 +13,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -29,6 +33,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.albugimed.blockerspike.ui.theme.ActionShape
@@ -205,6 +210,86 @@ fun Chevron(
 }
 
 /** Pastille de matiere. Elle identifie, elle ne classe pas. */
+/**
+ * La coche d'une etape terminee.
+ *
+ * Dessinee au trait, comme le reste du jeu d'icones, plutot que reprise de
+ * `Checkbox` : la case pleine et coloree de Material serait la seule surface
+ * pleine de l'ecran, et elle crierait plus fort que le titre qu'elle
+ * accompagne. Ici la coche cochee est un trait de plus, pas une tache de
+ * couleur.
+ *
+ * La zone tactile fait 48 dp quand la case n'en fait que 22 : une coche qu'on
+ * rate une fois sur trois finit par ne plus servir.
+ */
+@Composable
+fun TickBox(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val extras = LocalAlbugimedExtras.current
+    val stroke = if (checked) MaterialTheme.colorScheme.onSurface else extras.textMuted
+    Box(
+        modifier = modifier
+            .size(48.dp)
+            .toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Checkbox,
+                onValueChange = onCheckedChange,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(22.dp)
+                .border(width = 1.8.dp, color = stroke, shape = RoundedCornerShape(7.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (checked) Glyph(AppIcon.CHECK, size = 15.dp, tint = stroke)
+        }
+    }
+}
+
+/**
+ * Un geste reduit a son glyphe — monter, descendre.
+ *
+ * Le libelle n'est pas affiche mais il est **dit** : sans lui, un lecteur
+ * d'ecran annonce « bouton », et deux boutons identiques cote a cote deviennent
+ * indiscernables.
+ */
+@Composable
+fun GlyphButton(
+    icon: AppIcon,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val extras = LocalAlbugimedExtras.current
+    Box(
+        modifier = modifier
+            .size(48.dp)
+            .clickable(
+                enabled = enabled,
+                onClickLabel = label,
+                role = Role.Button,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Glyph(
+            icon,
+            size = 20.dp,
+            // Desactive, il reste visible mais s'efface : une fleche qui
+            // disparait ferait sauter la ligne d'en dessous d'un cran.
+            tint = if (enabled) MaterialTheme.colorScheme.onSurface else extras.textMuted.copy(alpha = 0.4f),
+        )
+    }
+}
+
 @Composable
 fun SubjectDot(subjectLabel: String, modifier: Modifier = Modifier) {
     Box(

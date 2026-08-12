@@ -18,6 +18,7 @@ import com.albugimed.blockerspike.sync.AgendaCacheRepository
 import com.albugimed.blockerspike.sync.AgendaStoreRepository
 import com.albugimed.blockerspike.sync.HttpSyncTransport
 import com.albugimed.blockerspike.sync.KeystoreCredentialStore
+import com.albugimed.blockerspike.sync.PathCommandOutboxRepository
 import com.albugimed.blockerspike.sync.QueueCacheRepository
 import com.albugimed.blockerspike.sync.DeviceCredentialStore
 import com.albugimed.blockerspike.sync.StudyOutboxRepository
@@ -76,6 +77,15 @@ object Graph {
      * deux moitiés se croisent, et elles ne s'y touchent pas.
      */
     lateinit var studyOutbox: StudyOutboxRepository
+        private set
+
+    /**
+     * Les gestes du parcours — V2.2. Septieme magasin, separe de `studyOutbox`
+     * pour une raison de fond : une trace est irremplacable, un ordre de
+     * parcours se refait d'un geste. Les melanger ferait porter a l'un la
+     * prudence que merite l'autre.
+     */
+    lateinit var pathCommandOutbox: PathCommandOutboxRepository
         private set
     lateinit var queueCache: QueueCacheRepository
         private set
@@ -149,6 +159,7 @@ object Graph {
         )
 
         studyOutbox = StudyOutboxRepository(context.applicationContext)
+        pathCommandOutbox = PathCommandOutboxRepository(context.applicationContext)
         captureOutbox = CaptureOutboxRepository(
             CaptureDatabase.get(context.applicationContext).captures(),
         )
@@ -165,6 +176,7 @@ object Graph {
             queueCache = queueCache,
             credentialStore = captureCredentials,
             transport = captureTransport,
+            pathOutbox = pathCommandOutbox,
             agendaCache = agendaCache,
             agendaStore = agendaStore,
         )

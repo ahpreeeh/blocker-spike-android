@@ -62,6 +62,14 @@ enum class AppIcon(internal val data: String, internal val dotted: Boolean = fal
     MENU("M4 7h16M4 12h16M4 17h16"),
     PLUS("M12 5v14M5 12h14"),
     ARROW("m9 18 6-6-6-6"),
+
+    /**
+     * Monter et descendre : le meme chevron que [ARROW], au quart de tour
+     * pres. Rien de nouveau n'a ete dessine — c'est la meme trace tournee, et
+     * elle porte donc le meme trait.
+     */
+    ARROW_UP("m6 15 6-6 6 6"),
+    ARROW_DOWN("m6 9 6 6 6-6"),
     CLOSE("m6 6 12 12M18 6 6 18"),
     CHECK("m5 12 4 4 7-8"),
     PAUSE("M9 5v14M15 5v14"),

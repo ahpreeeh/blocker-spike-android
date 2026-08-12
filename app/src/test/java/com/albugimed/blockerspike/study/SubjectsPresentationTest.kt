@@ -4,6 +4,7 @@ import com.albugimed.blockerspike.sync.AcademicNodeKind
 import com.albugimed.blockerspike.sync.AcademicNodeRef
 import com.albugimed.blockerspike.sync.NodeProgress
 import com.albugimed.blockerspike.sync.NodeRef
+import com.albugimed.blockerspike.sync.PathCommand
 import com.albugimed.blockerspike.sync.QueueItem
 import com.albugimed.blockerspike.sync.QueueSignals
 import org.junit.Assert.assertEquals
@@ -133,6 +134,60 @@ class SubjectsPresentationTest {
             "18 chapitres · 3 dans le parcours",
             subjectCountsLabel(view(chapters = 18, inPath = 3)),
         )
+    }
+
+    @Test
+    fun unVersementEnAttenteSeRattacheASaMatiere() {
+        val state = StudyQueueState(
+            nodes = listOf(
+                subject("nod_cardio", "Cardiologie"),
+                subject("nod_pharma", "Pharmacologie"),
+            ),
+            pendingPathCommands = listOf(
+                PathCommand.PourSubject("cmd_1", "nod_cardio", "revision"),
+                PathCommand.PourSubject("cmd_2", "nod_cardio", "training"),
+            ),
+        )
+
+        val views = buildSubjectViews(state)
+
+        assertEquals(listOf("revision", "training"), views[0].pouringKinds)
+        assertTrue(views[1].pouringKinds.isEmpty())
+    }
+
+    @Test
+    fun lAttenteSeDitEnToutesLettres() {
+        assertEquals(null, pouringKindsLabel(emptyList()))
+        assertEquals("Révision : en attente d'envoi", pouringKindsLabel(listOf("revision")))
+        assertEquals(
+            "Révision, Entraînement : en attente d'envoi",
+            pouringKindsLabel(listOf("revision", "training")),
+        )
+    }
+
+    @Test
+    fun leVersementSAnnonceCommeUneBorneHauteJamaisCommeUnCompte() {
+        // L'atelier saute les chapitres déjà présents dans cette nature :
+        // annoncer « 18 étapes » puis en créer trois ferait mentir le bouton.
+        assertEquals(
+            "Jusqu'à 18 chapitres iront dans le parcours. Ceux qui y sont déjà sont ignorés.",
+            pourPromptLabel(view(chapters = 18, inPath = 3)),
+        )
+        assertEquals(
+            "Jusqu'à 1 chapitre ira dans le parcours. Ceux qui y sont déjà sont ignorés.",
+            pourPromptLabel(view(chapters = 1, inPath = 0)),
+        )
+        assertEquals(
+            "Cette matière n'a aucun chapitre : rien ne partira.",
+            pourPromptLabel(view(chapters = 0, inPath = 0)),
+        )
+    }
+
+    @Test
+    fun lesQuatreNaturesSontCellesDuContrat() {
+        // La même liste que `ACTIVITY_KINDS` côté serveur : une cinquième nature
+        // partirait en commande et reviendrait « kind inconnu ».
+        assertEquals(listOf("first_study", "revision", "training", "reading"), POUR_KINDS)
     }
 
     private fun subject(

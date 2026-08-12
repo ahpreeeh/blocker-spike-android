@@ -21,12 +21,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.albugimed.blockerspike.reader.ReadingPosition
 import com.albugimed.blockerspike.sync.QueueItem
+import com.albugimed.blockerspike.ui.AppIcon
 import com.albugimed.blockerspike.ui.Chevron
 import com.albugimed.blockerspike.ui.Fact
+import com.albugimed.blockerspike.ui.GlyphButton
 import com.albugimed.blockerspike.ui.Kicker
 import com.albugimed.blockerspike.ui.PrimaryAction
 import com.albugimed.blockerspike.ui.SecondaryAction
 import com.albugimed.blockerspike.ui.SubjectDot
+import com.albugimed.blockerspike.ui.TickBox
 import com.albugimed.blockerspike.ui.mutedColor
 import java.time.Duration
 import java.time.Instant
@@ -50,6 +53,12 @@ import java.util.Locale
  *
  * Aucun tri, aucun badge, aucune couleur d'alerte : la pastille identifie la
  * matiere, la troisieme ligne est un fait date (cadrage §1.1).
+ *
+ * La coche est la seule action posee sur le rang, et elle y est parce qu'elle
+ * est le geste le plus frequent du parcours : l'enfouir sous un chevron
+ * demanderait deux appuis pour dire « c'est fait ». Les fleches, elles,
+ * n'apparaissent qu'en mode reordonnancement, ou elles remplacent le chevron
+ * plutot que de s'y ajouter.
  */
 @Composable
 internal fun StepRow(
@@ -57,6 +66,8 @@ internal fun StepRow(
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
     done: Boolean = false,
+    onToggleDone: ((Boolean) -> Unit)? = null,
+    moves: RowMoves? = null,
 ) {
     // Grise et barre, sans jamais retirer de la liste ni changer de place. Une
     // etape terminee reste lisible : c'est ce qu'on a franchi, pas un dechet.
@@ -64,12 +75,17 @@ internal fun StepRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onOpen)
+            // En reordonnancement la ligne cesse d'etre un raccourci : le seul
+            // geste possible est de la deplacer.
+            .then(if (moves == null) Modifier.clickable(onClick = onOpen) else Modifier)
             .heightIn(min = 56.dp)
             .padding(vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (onToggleDone != null && moves == null) {
+            TickBox(checked = done, onCheckedChange = onToggleDone)
+        }
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -101,9 +117,32 @@ internal fun StepRow(
                 color = mutedColor,
             )
         }
-        Chevron()
+        if (moves != null) {
+            GlyphButton(
+                icon = AppIcon.ARROW_UP,
+                label = "Monter",
+                enabled = moves.canMoveUp,
+                onClick = moves.onMoveUp,
+            )
+            GlyphButton(
+                icon = AppIcon.ARROW_DOWN,
+                label = "Descendre",
+                enabled = moves.canMoveDown,
+                onClick = moves.onMoveDown,
+            )
+        } else {
+            Chevron()
+        }
     }
 }
+
+/** Ce qu'une ligne peut faire d'elle-meme pendant un reordonnancement. */
+internal data class RowMoves(
+    val canMoveUp: Boolean,
+    val canMoveDown: Boolean,
+    val onMoveUp: () -> Unit,
+    val onMoveDown: () -> Unit,
+)
 
 /**
  * Ce que l'etape a deja recu, en une ligne.

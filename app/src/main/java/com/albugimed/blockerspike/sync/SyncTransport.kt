@@ -4,12 +4,12 @@ import com.albugimed.blockerspike.capture.Capture
 import com.albugimed.blockerspike.capture.CaptureDelivery
 
 /**
- * Toute la surface réseau de l'application, en six méthodes.
+ * Toute la surface réseau de l'application, en sept méthodes sur cinq chemins.
  *
  * L'interface est étroite exprès. Le §10 du contrat impose de pouvoir dire,
  * à tout moment et sans lire tout le code, **ce que l'application envoie et
- * à qui**. Six points de terminaison, un hôte, aucun autre appel : ce
- * fichier est la preuve, et son étroitesse est la garantie.
+ * à qui**. Cinq chemins, un hôte, aucun autre appel : ce fichier est la
+ * preuve, et son étroitesse est la garantie.
  *
  * `sendCaptures` a rejoint la liste en V2.1. Elle n'est pas appelée par le
  * moteur d'études mais par `CaptureUploadWorker` : deux files, deux
@@ -19,6 +19,11 @@ import com.albugimed.blockerspike.capture.CaptureDelivery
  * Elles partagent un seul chemin, `/api/v1/agenda/sync`, et ne remplacent pas
  * `fetchAgenda` : celui-ci descend l'instantané **calculé** par le serveur,
  * celles-là la matière brute, dans les deux sens.
+ *
+ * `sendPathCommands` a rejoint la liste en V2.2, sur le chemin de `fetchQueue`
+ * — le parcours se lit et s'écrit au même endroit. Elle n'emporte que trois
+ * gestes fermés (cocher, verser, réordonner) : le téléphone ne crée ni ne
+ * supprime d'étape.
  */
 interface SyncTransport {
     suspend fun fetchQueue(credentials: DeviceCredentials, etag: String?): QueueFetch
@@ -48,6 +53,25 @@ interface SyncTransport {
         deviceId: String,
         changes: List<AgendaEntry>,
     ): AgendaDelivery
+
+    /** Les gestes du parcours, dans l'ordre reçu — l'ordre fait partie du sens. */
+    suspend fun sendPathCommands(
+        credentials: DeviceCredentials,
+        deviceId: String,
+        commands: List<PathCommand>,
+    ): PathCommandDelivery
+}
+
+sealed interface PathCommandDelivery {
+    /** Le serveur a répondu, avec un verdict par commande. */
+    data class Answered(val results: List<PathCommandResult>) : PathCommandDelivery
+
+    data object Unauthorized : PathCommandDelivery
+
+    /** Le lot est trop volumineux : le couper en deux, ne rien abandonner. */
+    data object TooLarge : PathCommandDelivery
+
+    data class Failed(val reason: String, val retryable: Boolean) : PathCommandDelivery
 }
 
 sealed interface AgendaDelta {

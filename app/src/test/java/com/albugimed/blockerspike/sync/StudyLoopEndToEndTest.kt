@@ -42,6 +42,7 @@ class StudyLoopEndToEndTest {
         /** Le serveur enregistre, puis la réponse n'arrive jamais. */
         var loseNextResponse = false
         var rejectIf: (StudyEvent) -> String? = { null }
+        val commandsReceived = mutableListOf<PathCommand>()
     }
 
     private class ServerTransport(private val server: FakeServer) : SyncTransport {
@@ -113,6 +114,65 @@ class StudyLoopEndToEndTest {
             changes: List<AgendaEntry>,
         ): AgendaDelivery = error("aucun magasin d'agenda dans ce montage")
 
+        /**
+         * Le vrai serveur, en miniature : il applique la coche à sa file, et
+         * répond un verdict par commande. `noop` quand l'étape n'existe pas —
+         * un succès, pas un refus.
+         */
+        override suspend fun sendPathCommands(
+            credentials: DeviceCredentials,
+            deviceId: String,
+            commands: List<PathCommand>,
+        ): PathCommandDelivery {
+            if (server.offline) return PathCommandDelivery.Failed("Réseau coupé", retryable = true)
+
+            val results = commands.map { command ->
+                server.commandsReceived += command
+                when (command) {
+                    is PathCommand.CompleteStep -> {
+                        val known = server.queue.items.any { it.stepId == command.stepId }
+                        if (known) {
+                            server.queue = server.queue.copy(
+                                items = server.queue.items.map { item ->
+                                    if (item.stepId != command.stepId) item
+                                    else item.copy(
+                                        completedAt = command.completedAt.takeIf { command.completed },
+                                    )
+                                },
+                            )
+                            PathCommandResult(command.commandId, "applied", null)
+                        } else {
+                            PathCommandResult(command.commandId, "noop", "étape introuvable")
+                        }
+                    }
+
+                    else -> PathCommandResult(command.commandId, "applied", null)
+                }
+            }
+            return PathCommandDelivery.Answered(results)
+        }
+    }
+
+    private class MemoryPathOutbox : PathCommandOutbox {
+        var state = PathOutboxState()
+
+        fun enqueue(command: PathCommand) {
+            state = state.copy(pending = collapsePathCommands(state.pending, command))
+        }
+
+        override suspend fun current(): PathOutboxState = state
+        override suspend fun forget(commandIds: Set<String>): Boolean {
+            state = state.copy(pending = state.pending.filterNot { it.commandId in commandIds })
+            return true
+        }
+        override suspend fun bury(rejected: List<DeadPathCommand>): Boolean {
+            val ids = rejected.mapTo(mutableSetOf()) { it.command.commandId }
+            state = state.copy(
+                pending = state.pending.filterNot { it.commandId in ids },
+                dead = state.dead + rejected,
+            )
+            return true
+        }
     }
 
     private class MemoryOutbox : StudyOutbox {
@@ -168,6 +228,7 @@ class StudyLoopEndToEndTest {
 
     private val server = FakeServer()
     private val outbox = MemoryOutbox()
+    private val pathOutbox = MemoryPathOutbox()
     private val cache = MemoryQueueCache()
     private var clock = 1_000L
 
@@ -176,6 +237,7 @@ class StudyLoopEndToEndTest {
         queueCache = cache,
         credentialStore = MemoryCredentials(),
         transport = ServerTransport(server),
+        pathOutbox = pathOutbox,
         timeSource = { clock },
         logger = { _, _ -> },
     )
@@ -371,6 +433,79 @@ class StudyLoopEndToEndTest {
         assertEquals(2, cache.stored.snapshot.items.size)
         assertEquals(2, cache.stored.snapshot.nodes.size)
         assertFalse(engine.state.value.halted)
+    }
+
+    // ------------------------------------------------- les gestes du parcours
+
+    private fun cocher(suffixe: String, stepId: String, completed: Boolean = true) =
+        PathCommand.CompleteStep(
+            commandId = "cmd_01JZR4A9M2XK7QRSTVWXYZ01$suffixe",
+            stepId = stepId,
+            completed = completed,
+            completedAt = "2026-07-31T18:00:00+02:00",
+        ).also(pathOutbox::enqueue)
+
+    @Test
+    fun cocherHorsLigneTientJusquAuRetourDuReseau() = runTest {
+        server.queue = QueueSnapshot(
+            generatedAt = "2026-07-31T13:00:00.000Z",
+            items = listOf(etape),
+            nodes = listOf(matiere, chapitre),
+        )
+        server.offline = true
+
+        val geste = cocher("23", etape.stepId)
+        engine.sync()
+
+        // Rien n'est parti, et rien n'est perdu.
+        assertTrue(server.commandsReceived.isEmpty())
+        assertEquals(listOf(geste), pathOutbox.state.pending)
+
+        server.offline = false
+        engine.sync(force = true)
+
+        assertEquals(listOf(geste), server.commandsReceived)
+        assertTrue(pathOutbox.state.pending.isEmpty())
+
+        // Et — c'est tout l'intérêt de l'ordre d'envoi — la file redescendue
+        // dans le MÊME passage porte déjà la coche. Envoyée après le
+        // rafraîchissement, elle serait restée grise une synchronisation de trop.
+        assertEquals(
+            "2026-07-31T18:00:00+02:00",
+            cache.stored.snapshot.items.single().completedAt,
+        )
+    }
+
+    @Test
+    fun decocherEstUnEtatQueLeRejeuNePeutPasInverser() = runTest {
+        server.queue = QueueSnapshot(
+            generatedAt = "2026-07-31T13:00:00.000Z",
+            items = listOf(etape.copy(completedAt = "2026-07-30T09:00:00+02:00")),
+            nodes = listOf(matiere, chapitre),
+        )
+
+        cocher("24", etape.stepId, completed = false)
+        engine.sync()
+        assertEquals(null, cache.stored.snapshot.items.single().completedAt)
+
+        // Rejoué — ce que ferait une réponse perdue — le même geste redonne le
+        // même état. C'est ce qui dispense le serveur de tenir une table des
+        // commandes déjà vues.
+        cocher("24", etape.stepId, completed = false)
+        engine.sync(force = true)
+        assertEquals(null, cache.stored.snapshot.items.single().completedAt)
+    }
+
+    @Test
+    fun uneEtapeDisparueDeLAtelierNeBloquePasLaFile() = runTest {
+        // L'atelier a supprimé l'étape entre-temps : le serveur répond `noop`.
+        // C'est un succès — la renvoyer donnerait éternellement la même réponse.
+        cocher("25", "stp_01JZQK3M8F2WQRSTVWXYZ9999")
+
+        engine.sync()
+
+        assertTrue(pathOutbox.state.pending.isEmpty())
+        assertTrue(pathOutbox.state.dead.isEmpty())
     }
 
     @Test

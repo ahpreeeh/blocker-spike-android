@@ -15,6 +15,16 @@ interface StudyOutbox {
     suspend fun bury(rejected: List<DeadEvent>): Boolean
 }
 
+/**
+ * Idem pour les gestes du parcours. Même forme que `StudyOutbox`, magasin
+ * distinct : voir `PathCommandOutboxRepository`.
+ */
+interface PathCommandOutbox {
+    suspend fun current(): PathOutboxState
+    suspend fun forget(commandIds: Set<String>): Boolean
+    suspend fun bury(rejected: List<DeadPathCommand>): Boolean
+}
+
 /** Idem pour la copie locale de la file. */
 interface QueueCache {
     suspend fun current(): CachedQueue
@@ -75,6 +85,7 @@ class SyncEngine(
     private val queueCache: QueueCache,
     private val credentialStore: DeviceCredentialStore,
     private val transport: SyncTransport,
+    private val pathOutbox: PathCommandOutbox? = null,
     private val agendaCache: AgendaCache? = null,
     private val agendaStore: AgendaStore? = null,
     private val timeSource: TimeSource = SystemTimeSource,
@@ -162,6 +173,13 @@ class SyncEngine(
     }
 
     private suspend fun runSync(credentials: DeviceCredentials, deviceId: String): SyncOutcome {
+        // Les gestes du parcours montent en premier, et l'ordre a une raison
+        // précise : `refreshQueue` conclut ce passage, et la file redescendue
+        // doit déjà les porter. Envoyés après, ils ne se verraient qu'au
+        // passage suivant — la coche resterait grise une synchronisation de
+        // trop.
+        pushPathCommands(credentials, deviceId) ?: return halt()
+
         val pending = outbox.current()
         if (!pending.storageHealthy) {
             // On ignore ce qui attend : envoyer à l'aveugle risquerait de
@@ -238,6 +256,77 @@ class SyncEngine(
             lastError = null,
         )
         return SyncOutcome.Done(settled = settled, buried = buried, queueRefreshed = queueRefreshed)
+    }
+
+    /**
+     * Monte les gestes du parcours. `null` signale un `401`.
+     *
+     * Une panne ne fait rien perdre et n'interrompt rien : les trois gestes
+     * sont idempotents, ils restent en file et repartiront entiers au passage
+     * suivant. Les traces, elles, sont irremplaçables — elles ne doivent pas
+     * rester au sol parce qu'une coche n'est pas passée.
+     */
+    private suspend fun pushPathCommands(
+        credentials: DeviceCredentials,
+        deviceId: String,
+    ): Boolean? {
+        val store = pathOutbox ?: return false
+        val state = store.current()
+        if (!state.storageHealthy) {
+            // Envoyer à l'aveugle risquerait de marquer comme partis des gestes
+            // qu'on n'a jamais lus.
+            logger.add(SyncLogger.TAG_ERROR, "File des gestes illisible : envoi suspendu.")
+            return false
+        }
+
+        var remaining = state.pending
+        var batchSize = MAX_PATH_BATCH
+        while (remaining.isNotEmpty()) {
+            val batch = remaining.take(batchSize)
+
+            when (val delivery = transport.sendPathCommands(credentials, deviceId, batch)) {
+                is PathCommandDelivery.Answered -> {
+                    val verdicts = delivery.results.associateBy { it.commandId }
+
+                    val done = batch.filter { verdicts[it.commandId]?.isSettled == true }
+                    val rejected = batch.mapNotNull { command ->
+                        val verdict = verdicts[command.commandId] ?: return@mapNotNull null
+                        if (!verdict.isRejected) return@mapNotNull null
+                        DeadPathCommand(command, verdict.reason ?: "Refus sans motif")
+                    }
+
+                    store.forget(done.mapTo(mutableSetOf()) { it.commandId })
+                    store.bury(rejected)
+
+                    // Les commandes absentes de la réponse restent en file : on
+                    // ne les tient pour parties que sur verdict explicite.
+                    remaining = remaining.drop(batch.size)
+                }
+
+                PathCommandDelivery.Unauthorized -> return null
+
+                PathCommandDelivery.TooLarge -> {
+                    if (batchSize > 1) {
+                        batchSize = maxOf(1, batchSize / 2)
+                        continue
+                    }
+                    // Un seul geste, et il est encore trop gros : le renvoyer
+                    // donnerait éternellement la même réponse. Un
+                    // réordonnancement de plusieurs milliers d'étapes est le
+                    // seul cas plausible.
+                    val alone = batch.first()
+                    store.bury(listOf(DeadPathCommand(alone, "Geste trop volumineux pour le serveur")))
+                    remaining = remaining.drop(1)
+                }
+
+                is PathCommandDelivery.Failed -> {
+                    logger.add(SyncLogger.TAG_SYNC, "Gestes de parcours non envoyés : ${delivery.reason}")
+                    return false
+                }
+            }
+        }
+
+        return true
     }
 
     /** `null` signale un `401` ; l'appelant s'arrête. */
@@ -444,6 +533,9 @@ class SyncEngine(
 
         /** Aligné sur `MAX_AGENDA_CHANGES_PER_BATCH` du serveur. */
         const val MAX_AGENDA_BATCH = 50
+
+        /** Aligné sur `MAX_PATH_COMMANDS_PER_BATCH` du serveur. */
+        const val MAX_PATH_BATCH = 100
 
         /**
          * Bornes du balayage descendant. Un serveur qui rendrait sans cesse

@@ -140,6 +140,16 @@ internal fun StudyQueueScreen(
     val openStep = state.items.firstOrNull { it.stepId == openStepId }
     val path = remember(state) { buildPathView(state) }
 
+    // L'ordre en cours de manipulation. `null` = on ne reordonne pas. Il vit
+    // ici et pas dans le magasin : tant qu'on n'a pas dit « Terminé », rien ne
+    // part, et quitter l'ecran annule — deplacer une etape par erreur ne doit
+    // pas se payer d'un aller-retour reseau.
+    var draftOrder by rememberSaveable { mutableStateOf<List<String>?>(null) }
+    val rows = draftOrder?.let { order ->
+        val byId = path.rows.associateBy { it.item.stepId }
+        order.mapNotNull(byId::get) + path.rows.filterNot { it.item.stepId in order }
+    } ?: path.rows
+
     LaunchedEffect(repository) {
         runCatching { repository.onQueueOpened() }
             .onFailure {
@@ -199,19 +209,46 @@ internal fun StudyQueueScreen(
                 Notice(error, tone = NoticeTone.PROBLEM)
             }
         }
+        if (path.pendingPours > 0) {
+            item {
+                // On ne peut pas les afficher : les identifiants d'etape sont
+                // frappes par l'atelier. Inventer des lignes en attendant
+                // montrerait un parcours que personne n'a.
+                Notice(pouringLabel(path.pendingPours))
+            }
+        }
         item {
             SecondaryAction(text = "Déclarer autre chose", onClick = onDeclareFree)
         }
-        if (path.rows.isEmpty()) {
+        if (rows.isEmpty()) {
             item {
                 Text(
-                    "Le parcours est vide. Envoie des matières dedans depuis l'atelier, " +
-                        "puis mets-les dans l'ordre que tu veux.",
+                    "Le parcours est vide. Envoie des matières dedans depuis l'onglet " +
+                        "Matières, puis mets-les dans l'ordre que tu veux.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = mutedColor,
                 )
             }
         } else {
+            item {
+                ReorderBar(
+                    reordering = draftOrder != null,
+                    onStart = { draftOrder = rows.map { it.item.stepId } },
+                    onCancel = { draftOrder = null },
+                    onConfirm = {
+                        val ordered = draftOrder.orEmpty()
+                        draftOrder = null
+                        scope.launch {
+                            operationError = null
+                            runCatching { repository.reorderPath(ordered) }
+                                .onFailure {
+                                    operationError =
+                                        "Nouvel ordre non enregistré. Le parcours n'a pas bougé."
+                                }
+                        }
+                    },
+                )
+            }
             // Une carte, des rangs — et non une carte par etape. Chaque etape
             // occupait un ecran entier de defilement : on ne voyait jamais sa
             // liste, seulement le morceau sous le pouce.
@@ -220,7 +257,7 @@ internal fun StudyQueueScreen(
             // difference entre un parcours et une file d'attente.
             item {
                 SurfaceCard {
-                    path.rows.forEachIndexed { index, row ->
+                    rows.forEachIndexed { index, row ->
                         if (index > 0) {
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         }
@@ -228,6 +265,30 @@ internal fun StudyQueueScreen(
                             item = row.item,
                             done = row.done,
                             onOpen = { openStepId = row.item.stepId },
+                            onToggleDone = { done ->
+                                scope.launch {
+                                    operationError = null
+                                    runCatching { repository.setStepDone(row.item.stepId, done) }
+                                        .onFailure {
+                                            operationError =
+                                                "Coche non enregistrée. Rien n'a changé."
+                                        }
+                                }
+                            },
+                            moves = draftOrder?.let {
+                                RowMoves(
+                                    canMoveUp = index > 0,
+                                    canMoveDown = index < rows.size - 1,
+                                    onMoveUp = {
+                                        draftOrder = rows.map { r -> r.item.stepId }
+                                            .swapped(index, index - 1)
+                                    },
+                                    onMoveDown = {
+                                        draftOrder = rows.map { r -> r.item.stepId }
+                                            .swapped(index, index + 1)
+                                    },
+                                )
+                            },
                         )
                     }
                 }
@@ -250,6 +311,54 @@ internal fun StudyQueueScreen(
             },
         )
     }
+}
+
+/**
+ * La barre du reordonnancement.
+ *
+ * Un mode, et non des fleches posees en permanence sur chaque rang : une liste
+ * dont chaque ligne porte deux boutons cesse d'etre lisible, et c'est
+ * exactement ce que la refonte des rangs a corrige. Tant qu'on n'a pas dit
+ * « Terminé », rien ne part — l'ordre affiche est un brouillon.
+ */
+@Composable
+private fun ReorderBar(
+    reordering: Boolean,
+    onStart: () -> Unit,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    if (!reordering) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            TextButton(onClick = onStart) { Text("Réordonner") }
+        }
+        return
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "Déplace les étapes, puis valide.",
+            style = MaterialTheme.typography.bodySmall,
+            color = mutedColor,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onCancel) { Text("Annuler") }
+            TextButton(onClick = onConfirm) { Text("Terminé") }
+        }
+    }
+}
+
+/** Deux rangs echanges — et non « monte d'un cran », qui ne dirait rien de sur. */
+private fun List<String>.swapped(from: Int, to: Int): List<String> {
+    if (from !in indices || to !in indices) return this
+    return toMutableList().also { it[from] = this[to]; it[to] = this[from] }
 }
 
 @Composable
@@ -427,6 +536,17 @@ internal fun cacheFreshnessLabel(cachedAtMillis: Long?): String {
 }
 
 internal fun pendingLabel(count: Int): String = "$count en attente d'envoi"
+
+/**
+ * Le versement en cours.
+ *
+ * Il se dit et ne se montre pas : les etapes n'existent qu'une fois creees par
+ * l'atelier, et les afficher par avance ferait promettre un parcours qui n'est
+ * pas encore la.
+ */
+internal fun pouringLabel(count: Int): String =
+    if (count == 1) "Une matière part dans le parcours. Elle apparaîtra à la prochaine synchro."
+    else "$count matières partent dans le parcours. Elles apparaîtront à la prochaine synchro."
 
 internal fun rejectedLabel(count: Int): String =
     if (count == 1) "1 rejeté" else "$count rejetés"

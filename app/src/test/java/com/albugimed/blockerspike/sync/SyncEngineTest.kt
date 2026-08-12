@@ -137,6 +137,12 @@ class SyncEngineTest {
             changes: List<AgendaEntry>,
         ): AgendaDelivery = error("aucun magasin d'agenda dans ce montage")
 
+        /** Idem pour les gestes de parcours : pas de magasin, donc pas d'envoi. */
+        override suspend fun sendPathCommands(
+            credentials: DeviceCredentials,
+            deviceId: String,
+            commands: List<PathCommand>,
+        ): PathCommandDelivery = error("aucun magasin de gestes dans ce montage")
     }
 
     private var clock = 1_000L

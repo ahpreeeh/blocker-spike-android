@@ -281,6 +281,53 @@ class HttpSyncTransport(
         }
     }
 
+    override suspend fun sendPathCommands(
+        credentials: DeviceCredentials,
+        deviceId: String,
+        commands: List<PathCommand>,
+    ): PathCommandDelivery = withContext(dispatcher) {
+        // Même chemin que `fetchQueue`, autre verbe : le parcours se lit et
+        // s'écrit au même endroit.
+        val connection = open(credentials, "/api/v1/queue")
+            ?: return@withContext PathCommandDelivery.Failed(
+                "Adresse de serveur inutilisable",
+                retryable = false,
+            )
+
+        try {
+            connection.requestMethod = "POST"
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+
+            val body = PathCommandJson.encodeBatch(deviceId, commands).toByteArray(Charsets.UTF_8)
+            connection.setFixedLengthStreamingMode(body.size)
+            connection.outputStream.use { it.write(body) }
+
+            when (val status = connection.responseCode) {
+                HttpURLConnection.HTTP_OK -> {
+                    val answer = connection.inputStream.bufferedReader().use { it.readText() }
+                    val results = PathCommandJson.decodeResults(answer)
+                    if (results == null) {
+                        // Illisible n'est pas refusé : on garde tout et on
+                        // réessaiera. Les trois gestes sont idempotents, le
+                        // rejeu ne peut rien abîmer.
+                        PathCommandDelivery.Failed("Réponse de verdicts illisible", retryable = true)
+                    } else {
+                        PathCommandDelivery.Answered(results)
+                    }
+                }
+
+                HttpURLConnection.HTTP_UNAUTHORIZED -> PathCommandDelivery.Unauthorized
+                HttpURLConnection.HTTP_ENTITY_TOO_LARGE -> PathCommandDelivery.TooLarge
+                else -> PathCommandDelivery.Failed("HTTP $status", retryable = status >= 500)
+            }
+        } catch (error: IOException) {
+            PathCommandDelivery.Failed(error.javaClass.simpleName, retryable = true)
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     /**
      * Ouvre la connexion et refuse tout ce qui n'est pas HTTPS. Un secret ne
      * part pas en clair, quelle qu'ait été la saisie.

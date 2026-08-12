@@ -8,10 +8,15 @@ import com.albugimed.blockerspike.sync.CachedAgenda
 import com.albugimed.blockerspike.sync.CachedQueue
 import com.albugimed.blockerspike.sync.EnrolOutcome
 import com.albugimed.blockerspike.sync.OutboxState
+import com.albugimed.blockerspike.sync.PathCommand
+import com.albugimed.blockerspike.sync.PathOutboxState
 import com.albugimed.blockerspike.sync.StudyEvent
 import com.albugimed.blockerspike.sync.SyncState
 import com.albugimed.blockerspike.sync.agendaEditedNow
+import com.albugimed.blockerspike.sync.collapsePathCommands
+import com.albugimed.blockerspike.sync.formatOccurredAt
 import com.albugimed.blockerspike.sync.newEventId
+import com.albugimed.blockerspike.sync.newPathCommandId
 import com.albugimed.blockerspike.sync.newTemporalConstraintId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,6 +59,23 @@ interface StudyRepository {
 
     /** Retire une entrée. Le retrait est daté et repart comme une modification. */
     suspend fun deleteAgendaEntry(id: String)
+
+    /**
+     * Coche ou décoche une étape. **Un état, pas un basculement** : c'est ce
+     * qui rend le rejeu inoffensif, et c'est aussi ce qui interdit de déduire
+     * l'achèvement du travail déclaré — seul ce geste-ci le décide.
+     */
+    suspend fun setStepDone(stepId: String, done: Boolean)
+
+    /** Verse les chapitres d'une matière dans le parcours, en une fois. */
+    suspend fun pourSubject(nodeId: String, kind: String)
+
+    /**
+     * Impose l'ordre affiché. La liste est **entière et absolue** : « monte
+     * d'un rang » rejoué sur un parcours modifié entre-temps donnerait un
+     * résultat que personne n'a voulu.
+     */
+    suspend fun reorderPath(orderedStepIds: List<String>)
 }
 
 class LocalStudySaveException : Exception("L'écriture dans la file locale a échoué")
@@ -64,8 +86,10 @@ class SyncStudyRepository(
     outboxStates: Flow<OutboxState>,
     cachedAgendas: Flow<CachedAgenda> = flowOf(CachedAgenda()),
     agendaStoreStates: Flow<AgendaStoreState> = flowOf(AgendaStoreState()),
+    pathOutboxStates: Flow<PathOutboxState> = flowOf(PathOutboxState()),
     override val syncState: Flow<SyncState> = flowOf(SyncState(enrolled = true)),
     private val enqueue: suspend (StudyEvent) -> Boolean,
+    private val enqueuePathCommand: suspend (PathCommand) -> Boolean = { false },
     private val requestSync: suspend (force: Boolean) -> Unit,
     private val agendaStore: AgendaStore? = null,
     private val enrol: suspend (baseUrl: String, token: String) -> EnrolOutcome = { _, _ ->
@@ -73,6 +97,7 @@ class SyncStudyRepository(
     },
     private val nowMillis: () -> Long = System::currentTimeMillis,
     private val eventIdFactory: (Long) -> String = { newEventId(it) },
+    private val commandIdFactory: (Long) -> String = { newPathCommandId(it) },
 ) : StudyRepository {
     override val agendaState: Flow<AgendaState> = cachedAgendas.map { it.toAgendaState() }
 
@@ -82,7 +107,8 @@ class SyncStudyRepository(
     override val queueState: Flow<StudyQueueState> = combine(
         cachedQueues,
         outboxStates,
-    ) { cached, outbox ->
+        pathOutboxStates,
+    ) { cached, outbox, path ->
         StudyQueueState(
             cachedAtMillis = cached.fetchedAtMillis,
             items = cached.snapshot.items,
@@ -93,6 +119,8 @@ class SyncStudyRepository(
             rejectedEvents = outbox.dead,
             unreadableCount = outbox.unreadable,
             outboxStorageHealthy = outbox.storageHealthy,
+            pendingPathCommands = path.pending,
+            rejectedPathCommands = path.dead,
         )
     }
 
@@ -136,6 +164,44 @@ class SyncStudyRepository(
         val existing = store.current().entries.firstOrNull { it.id == id } ?: return
         val removed = existing.copy(deleted = true, editedAt = agendaEditedNow(nowMillis()))
         if (!store.put(removed)) throw LocalStudySaveException()
+    }
+
+    override suspend fun setStepDone(stepId: String, done: Boolean) {
+        val now = nowMillis()
+        push(
+            PathCommand.CompleteStep(
+                commandId = commandIdFactory(now),
+                stepId = stepId,
+                completed = done,
+                // L'instant du geste, décalage compris : cocher hors ligne
+                // hier, c'est hier — pas au retour du réseau.
+                completedAt = formatOccurredAt(now),
+            ),
+        )
+    }
+
+    override suspend fun pourSubject(nodeId: String, kind: String) {
+        val now = nowMillis()
+        push(PathCommand.PourSubject(commandIdFactory(now), nodeId, kind))
+    }
+
+    override suspend fun reorderPath(orderedStepIds: List<String>) {
+        if (orderedStepIds.isEmpty()) return
+        val now = nowMillis()
+        push(PathCommand.ReorderPath(commandIdFactory(now), orderedStepIds))
+    }
+
+    /**
+     * Enregistre le geste, puis tente de l'envoyer.
+     *
+     * L'écriture locale d'abord, et elle seule peut faire échouer : un geste qui
+     * paraît pris alors que rien n'est enregistré est la seule chose que l'écran
+     * n'a pas le droit de faire. L'envoi qui suit est opportuniste — hors ligne,
+     * il échoue sans rien annuler.
+     */
+    private suspend fun push(command: PathCommand) {
+        if (!enqueuePathCommand(command)) throw LocalStudySaveException()
+        requestSync(false)
     }
 }
 
@@ -201,6 +267,36 @@ class InMemoryStudyRepository(
             )
         }
     }
+
+    // Le simulacre met les gestes en attente comme le vrai magasin : c'est la
+    // couche optimiste elle-même, et les previews doivent la montrer.
+    override suspend fun setStepDone(stepId: String, done: Boolean) = queueCommand(
+        PathCommand.CompleteStep(
+            commandId = newPathCommandId(System.currentTimeMillis()),
+            stepId = stepId,
+            completed = done,
+            completedAt = formatOccurredAt(System.currentTimeMillis()),
+        ),
+    )
+
+    override suspend fun pourSubject(nodeId: String, kind: String) = queueCommand(
+        PathCommand.PourSubject(newPathCommandId(System.currentTimeMillis()), nodeId, kind),
+    )
+
+    override suspend fun reorderPath(orderedStepIds: List<String>) {
+        if (orderedStepIds.isEmpty()) return
+        queueCommand(
+            PathCommand.ReorderPath(newPathCommandId(System.currentTimeMillis()), orderedStepIds),
+        )
+    }
+
+    private fun queueCommand(command: PathCommand) {
+        mutableQueueState.update { state ->
+            state.copy(
+                pendingPathCommands = collapsePathCommands(state.pendingPathCommands, command),
+            )
+        }
+    }
 }
 
 /** Point d'injection de processus ; la production se branche sur Graph. */
@@ -216,9 +312,11 @@ object StudyDependencies {
                 outboxStates = Graph.studyOutbox.state,
                 cachedAgendas = Graph.agendaCache.cached,
                 agendaStoreStates = Graph.agendaStore.state,
+                pathOutboxStates = Graph.pathCommandOutbox.state,
                 syncState = Graph.syncEngine.state,
                 agendaStore = Graph.agendaStore,
                 enqueue = Graph.studyOutbox::enqueue,
+                enqueuePathCommand = Graph.pathCommandOutbox::enqueue,
                 requestSync = { force ->
                     Graph.syncEngine.sync(force = force)
                     Unit

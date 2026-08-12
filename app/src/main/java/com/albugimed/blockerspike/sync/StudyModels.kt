@@ -92,7 +92,15 @@ private const val CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
  * nouvelle tentative en un événement distinct. C'est l'erreur à ne pas
  * commettre.
  */
-fun newEventId(nowMillis: Long, random: Random = Random.Default): String {
+fun newEventId(nowMillis: Long, random: Random = Random.Default): String =
+    "evt_" + ulidBody(nowMillis, random)
+
+/**
+ * Le corps d'un ULID : dix caractères d'horodatage, seize de hasard. Partagé
+ * avec les commandes de parcours, qui frappent leur identifiant au même moment
+ * et pour la même raison — au geste, jamais à l'envoi.
+ */
+internal fun ulidBody(nowMillis: Long, random: Random = Random.Default): String {
     val characters = CharArray(26)
     var remaining = nowMillis
     for (index in 9 downTo 0) {
@@ -102,7 +110,7 @@ fun newEventId(nowMillis: Long, random: Random = Random.Default): String {
     for (index in 10 until 26) {
         characters[index] = CROCKFORD[random.nextInt(CROCKFORD.length)]
     }
-    return "evt_" + String(characters)
+    return String(characters)
 }
 
 /**

@@ -5,7 +5,9 @@ import com.albugimed.blockerspike.sync.AcademicNodeKind
 import com.albugimed.blockerspike.sync.AcademicNodeRef
 import com.albugimed.blockerspike.sync.ActivityKind
 import com.albugimed.blockerspike.sync.DeadEvent
+import com.albugimed.blockerspike.sync.DeadPathCommand
 import com.albugimed.blockerspike.sync.Difficulty
+import com.albugimed.blockerspike.sync.PathCommand
 import com.albugimed.blockerspike.sync.QueueItem
 import com.albugimed.blockerspike.sync.StudyEvent
 import com.albugimed.blockerspike.sync.StudyEventType
@@ -25,6 +27,16 @@ data class StudyQueueState(
     val rejectedEvents: List<DeadEvent> = emptyList(),
     val unreadableCount: Int = 0,
     val outboxStorageHealthy: Boolean = true,
+    /**
+     * Les gestes de parcours pas encore confirmés par le serveur.
+     *
+     * Ils **sont** la couche optimiste : `buildPathView` les applique par-dessus
+     * `items`. Un second magasin local qui dirait « cette étape est cochée » en
+     * parallèle de la file finirait par la contredire, et il faudrait alors
+     * décider lequel des deux a raison.
+     */
+    val pendingPathCommands: List<PathCommand> = emptyList(),
+    val rejectedPathCommands: List<DeadPathCommand> = emptyList(),
 )
 
 enum class WorkUnitType {
