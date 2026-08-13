@@ -9,6 +9,7 @@ import com.albugimed.blockerspike.sync.CachedQueue
 import com.albugimed.blockerspike.sync.EnrolOutcome
 import com.albugimed.blockerspike.sync.OutboxState
 import com.albugimed.blockerspike.sync.PathCommand
+import com.albugimed.blockerspike.sync.PathCommandOutbox
 import com.albugimed.blockerspike.sync.PathOutboxState
 import com.albugimed.blockerspike.sync.StudyEvent
 import com.albugimed.blockerspike.sync.SyncState
@@ -68,7 +69,7 @@ interface StudyRepository {
     suspend fun setStepDone(stepId: String, done: Boolean)
 
     /** Verse les chapitres d'une matière dans le parcours, en une fois. */
-    suspend fun pourSubject(nodeId: String, kind: String)
+    suspend fun addSubjectsToPath(nodeIds: List<String>)
 
     /**
      * Impose l'ordre affiché. La liste est **entière et absolue** : « monte
@@ -89,7 +90,7 @@ class SyncStudyRepository(
     pathOutboxStates: Flow<PathOutboxState> = flowOf(PathOutboxState()),
     override val syncState: Flow<SyncState> = flowOf(SyncState(enrolled = true)),
     private val enqueue: suspend (StudyEvent) -> Boolean,
-    private val enqueuePathCommand: suspend (PathCommand) -> Boolean = { false },
+    private val pathCommandOutbox: PathCommandOutbox? = null,
     private val requestSync: suspend (force: Boolean) -> Unit,
     private val agendaStore: AgendaStore? = null,
     private val enrol: suspend (baseUrl: String, token: String) -> EnrolOutcome = { _, _ ->
@@ -180,9 +181,14 @@ class SyncStudyRepository(
         )
     }
 
-    override suspend fun pourSubject(nodeId: String, kind: String) {
-        val now = nowMillis()
-        push(PathCommand.PourSubject(commandIdFactory(now), nodeId, kind))
+    override suspend fun addSubjectsToPath(nodeIds: List<String>) {
+        val uniqueIds = nodeIds.filter(String::isNotBlank).distinct()
+        if (uniqueIds.isEmpty()) return
+        val baseTime = nowMillis()
+        val commands = uniqueIds.mapIndexed { index, nodeId ->
+            PathCommand.PourSubject(commandIdFactory(baseTime + index), nodeId)
+        }
+        push(commands)
     }
 
     override suspend fun reorderPath(orderedStepIds: List<String>) {
@@ -199,9 +205,12 @@ class SyncStudyRepository(
      * n'a pas le droit de faire. L'envoi qui suit est opportuniste — hors ligne,
      * il échoue sans rien annuler.
      */
-    private suspend fun push(command: PathCommand) {
-        if (!enqueuePathCommand(command)) throw LocalStudySaveException()
-        requestSync(false)
+    private suspend fun push(command: PathCommand) = push(listOf(command))
+
+    private suspend fun push(commands: List<PathCommand>) {
+        val outbox = pathCommandOutbox ?: throw LocalStudySaveException()
+        if (!outbox.enqueueAll(commands)) throw LocalStudySaveException()
+        runCatching { requestSync(false) }
     }
 }
 
@@ -279,9 +288,23 @@ class InMemoryStudyRepository(
         ),
     )
 
-    override suspend fun pourSubject(nodeId: String, kind: String) = queueCommand(
-        PathCommand.PourSubject(newPathCommandId(System.currentTimeMillis()), nodeId, kind),
-    )
+    override suspend fun addSubjectsToPath(nodeIds: List<String>) {
+        val baseTime = System.currentTimeMillis()
+        val commands = nodeIds
+            .filter(String::isNotBlank)
+            .distinct()
+            .mapIndexed { index, nodeId ->
+                PathCommand.PourSubject(newPathCommandId(baseTime + index), nodeId)
+            }
+        if (commands.isEmpty()) return
+        mutableQueueState.update { state ->
+            state.copy(
+                pendingPathCommands = commands.fold(state.pendingPathCommands) { pending, command ->
+                    collapsePathCommands(pending, command)
+                },
+            )
+        }
+    }
 
     override suspend fun reorderPath(orderedStepIds: List<String>) {
         if (orderedStepIds.isEmpty()) return
@@ -316,7 +339,7 @@ object StudyDependencies {
                 syncState = Graph.syncEngine.state,
                 agendaStore = Graph.agendaStore,
                 enqueue = Graph.studyOutbox::enqueue,
-                enqueuePathCommand = Graph.pathCommandOutbox::enqueue,
+                pathCommandOutbox = Graph.pathCommandOutbox,
                 requestSync = { force ->
                     Graph.syncEngine.sync(force = force)
                     Unit

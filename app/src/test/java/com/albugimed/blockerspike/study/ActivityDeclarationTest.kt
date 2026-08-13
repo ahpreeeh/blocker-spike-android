@@ -37,6 +37,7 @@ class ActivityDeclarationTest {
     fun `builds the activity payload from the declaration form`() {
         val result = buildActivityDeclaration(
             item = item,
+            activityKind = ActivityKind.REVISION,
             form = validForm(
                 pagesFrom = " 47 ",
                 pagesTo = "62",
@@ -49,7 +50,7 @@ class ActivityDeclarationTest {
         assertEquals("stp_01JZQK3M8F2W", result.stepId)
         assertEquals("res_college_cardio", result.resourceId)
         // Le type de l'étape reste l'autorité côté serveur.
-        assertNull(result.activityKind)
+        assertEquals(ActivityKind.REVISION, result.activityKind)
         assertEquals(35, result.durationMinutes)
         assertEquals(ActivityUnit.Pages(from = 47, to = 62), result.unit)
         assertEquals(Difficulty.HARD, result.difficulty)
@@ -63,6 +64,7 @@ class ActivityDeclarationTest {
 
         val result = buildActivityDeclaration(
             item = subjectOnly,
+            activityKind = ActivityKind.FIRST_STUDY,
             form = validForm(unitType = WorkUnitType.CHAPTER),
             occurredAt = occurredAt,
         ).requireValid()
@@ -87,7 +89,12 @@ class ActivityDeclarationTest {
         )
 
         cases.forEach { (form, expectedUnit) ->
-            val declaration = buildActivityDeclaration(item, form, occurredAt).requireValid()
+            val declaration = buildActivityDeclaration(
+                item,
+                ActivityKind.REVISION,
+                form,
+                occurredAt,
+            ).requireValid()
             assertEquals(expectedUnit, declaration.unit)
         }
     }
@@ -96,6 +103,7 @@ class ActivityDeclarationTest {
     fun `reports all invalid required values without building a payload`() {
         val result = buildActivityDeclaration(
             item = item,
+            activityKind = ActivityKind.REVISION,
             form = DeclareFormState(
                 durationMinutes = "0",
                 unitType = WorkUnitType.PAGES,
@@ -109,10 +117,9 @@ class ActivityDeclarationTest {
 
         assertTrue(result is DeclarationBuildResult.Invalid)
         val errors = (result as DeclarationBuildResult.Invalid).errors
-        assertEquals(4, errors.size)
+        assertEquals(3, errors.size)
         assertTrue(errors.any { it.contains("durée positive") })
         assertTrue(errors.any { it.contains("page de fin") })
-        assertTrue(errors.any { it.contains("difficulté") })
         assertTrue(errors.any { it.contains("500") })
     }
 
@@ -122,6 +129,7 @@ class ActivityDeclarationTest {
 
         val result = buildActivityDeclaration(
             item,
+            ActivityKind.REVISION,
             validForm(note = note),
             occurredAt,
         ).requireValid()
@@ -133,6 +141,7 @@ class ActivityDeclarationTest {
     fun `maps the declaration to the real sync event without losing the offset`() {
         val declaration = buildActivityDeclaration(
             item,
+            ActivityKind.REVISION,
             validForm(),
             occurredAt.withNano(987_000_000),
         ).requireValid()
@@ -144,9 +153,37 @@ class ActivityDeclarationTest {
         assertEquals("nod_chapter", event.nodeId)
         assertEquals("stp_01JZQK3M8F2W", event.stepId)
         assertEquals("res_college_cardio", event.resourceId)
-        assertNull(event.activityKind)
+        assertEquals(ActivityKind.REVISION, event.activityKind)
         assertEquals(ActivityUnit.Pages(1, 2), event.unit)
         assertEquals(Difficulty.HARD, event.difficulty)
+    }
+
+    @Test
+    fun `quick pathway declaration requires kind but not details`() {
+        val missingKind = buildActivityDeclaration(
+            item = item,
+            activityKind = null,
+            form = DeclareFormState(durationMinutes = "30"),
+            occurredAt = occurredAt,
+        )
+        assertTrue(missingKind is DeclarationBuildResult.Invalid)
+        assertTrue(
+            (missingKind as DeclarationBuildResult.Invalid).errors
+                .contains("Choisis un type de travail."),
+        )
+
+        val declaration = buildActivityDeclaration(
+            item = item,
+            activityKind = ActivityKind.TRAINING,
+            form = DeclareFormState(durationMinutes = "30"),
+            occurredAt = occurredAt,
+        ).requireValid()
+
+        assertEquals(ActivityKind.TRAINING, declaration.activityKind)
+        assertNull(declaration.unit)
+        assertNull(declaration.difficulty)
+        assertNull(declaration.note)
+        assertNull(declaration.toStudyEvent("evt_quick").unit)
     }
 
     @Test

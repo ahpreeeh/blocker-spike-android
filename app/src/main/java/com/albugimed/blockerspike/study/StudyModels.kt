@@ -52,18 +52,18 @@ data class ActivityDeclaration(
     val nodeId: String,
     val occurredAt: OffsetDateTime,
     val durationMinutes: Int,
-    val unit: ActivityUnit,
-    val difficulty: Difficulty,
+    val unit: ActivityUnit?,
+    val difficulty: Difficulty?,
     val note: String?,
     val stepId: String? = null,
     val resourceId: String? = null,
-    /** Seulement hors file ; avec une étape, le référentiel serveur fait foi. */
-    val activityKind: ActivityKind? = null,
+    /** Type choisi pour cette declaration, parcours compris. */
+    val activityKind: ActivityKind,
 )
 
 data class DeclareFormState(
     val durationMinutes: String = "",
-    val unitType: WorkUnitType = WorkUnitType.PAGES,
+    val unitType: WorkUnitType? = null,
     val pagesFrom: String = "",
     val pagesTo: String = "",
     val annaleLabel: String = "",
@@ -81,19 +81,29 @@ sealed interface DeclarationBuildResult {
 
 fun buildActivityDeclaration(
     item: QueueItem,
+    activityKind: ActivityKind?,
     form: DeclareFormState,
     occurredAt: OffsetDateTime,
-): DeclarationBuildResult = buildActivityDeclarationForTarget(
-    target = DeclarationTarget(
-        nodeId = item.chapter?.nodeId ?: item.subject.nodeId,
-        stepId = item.stepId,
-        resourceId = item.resource?.resourceId,
-        activityKind = null,
-    ),
-    targetErrors = emptyList(),
-    form = form,
-    occurredAt = occurredAt,
-)
+): DeclarationBuildResult {
+    val target = activityKind?.let {
+        DeclarationTarget(
+            nodeId = item.chapter?.nodeId ?: item.subject.nodeId,
+            stepId = item.stepId,
+            resourceId = item.resource?.resourceId,
+            activityKind = it,
+        )
+    }
+    return buildActivityDeclarationForTarget(
+        target = target,
+        targetErrors = if (activityKind == null) {
+            listOf("Choisis un type de travail.")
+        } else {
+            emptyList()
+        },
+        form = form,
+        occurredAt = occurredAt,
+    )
+}
 
 /** Déclaration hors file : un vrai chapitre et un type sont obligatoires. */
 fun buildFreeActivityDeclaration(
@@ -135,7 +145,7 @@ private data class DeclarationTarget(
     val nodeId: String,
     val stepId: String?,
     val resourceId: String?,
-    val activityKind: ActivityKind?,
+    val activityKind: ActivityKind,
 )
 
 private fun buildActivityDeclarationForTarget(
@@ -151,6 +161,7 @@ private fun buildActivityDeclarationForTarget(
     }
 
     val unit = when (form.unitType) {
+        null -> null
         WorkUnitType.PAGES -> {
             val from = form.pagesFrom.trim().toIntOrNull()
             val to = form.pagesTo.trim().toIntOrNull()
@@ -193,10 +204,6 @@ private fun buildActivityDeclarationForTarget(
             }
     }
 
-    val difficulty = form.difficulty
-    if (difficulty == null) {
-        errors += "Choisis une difficulté."
-    }
     if (form.note.length > MAX_NOTE_LENGTH) {
         errors += "La note ne peut pas dépasser $MAX_NOTE_LENGTH caractères."
     }
@@ -204,9 +211,7 @@ private fun buildActivityDeclarationForTarget(
     if (
         errors.isNotEmpty() ||
         target == null ||
-        duration == null ||
-        unit == null ||
-        difficulty == null
+        duration == null
     ) {
         return DeclarationBuildResult.Invalid(errors)
     }
@@ -217,7 +222,7 @@ private fun buildActivityDeclarationForTarget(
             occurredAt = occurredAt,
             durationMinutes = duration,
             unit = unit,
-            difficulty = difficulty,
+            difficulty = form.difficulty,
             note = form.note.trim().ifEmpty { null },
             stepId = target.stepId,
             resourceId = target.resourceId,

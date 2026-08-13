@@ -61,6 +61,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.time.OffsetDateTime
 
+private val declarationPostSaveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
 class DeclareActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,7 +84,7 @@ class DeclareActivity : ComponentActivity() {
             if (readerResourceId != null && prefillTo != null) {
                 // Le compte repart de la page suivante. Sans cela, la
                 // prochaine seance reproposerait des pages deja declarees.
-                readerScope.launch {
+                declarationPostSaveScope.launch {
                     Graph.readingPositions.markDeclaredThrough(
                         resourceId = readerResourceId,
                         page = prefillTo,
@@ -138,12 +140,6 @@ class DeclareActivity : ComponentActivity() {
         private const val EXTRA_PAGES_FROM = "study_pages_from"
         private const val EXTRA_PAGES_TO = "study_pages_to"
 
-        /**
-         * Portee applicative : la mise a jour du signet ne doit pas etre
-         * annulee quand l'ecran se ferme juste apres l'enregistrement.
-         */
-        private val readerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
         fun intent(context: Context, stepId: String): Intent =
             Intent(context, DeclareActivity::class.java)
                 .putExtra(EXTRA_STEP_ID, stepId)
@@ -197,7 +193,9 @@ internal fun DeclareScreen(
     onSaved: () -> Unit = {},
 ) {
     var durationMinutes by rememberSaveable { mutableStateOf("") }
-    var unitTypeName by rememberSaveable { mutableStateOf(WorkUnitType.PAGES.name) }
+    var unitTypeName by rememberSaveable {
+        mutableStateOf(if (prefill == null) null else WorkUnitType.PAGES.name)
+    }
     var pagesFrom by rememberSaveable { mutableStateOf(prefill?.from?.toString() ?: "") }
     var pagesTo by rememberSaveable { mutableStateOf(prefill?.to?.toString() ?: "") }
     var annaleLabel by rememberSaveable { mutableStateOf("") }
@@ -206,7 +204,7 @@ internal fun DeclareScreen(
     var difficultyName by rememberSaveable { mutableStateOf<String?>(null) }
     var note by rememberSaveable { mutableStateOf("") }
     var customDuration by rememberSaveable { mutableStateOf(false) }
-    var showNote by rememberSaveable { mutableStateOf(false) }
+    var showDetails by rememberSaveable { mutableStateOf(prefill != null) }
     var validationMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var resourceError by rememberSaveable { mutableStateOf<String?>(null) }
     var saved by rememberSaveable { mutableStateOf(false) }
@@ -215,7 +213,7 @@ internal fun DeclareScreen(
     var selectedChapterId by rememberSaveable { mutableStateOf<String?>(null) }
     var activityKindName by rememberSaveable { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val unitType = WorkUnitType.valueOf(unitTypeName)
+    val unitType = unitTypeName?.let(WorkUnitType::valueOf)
     val selectedChapter = nodes.firstOrNull {
         it.kind == AcademicNodeKind.CHAPTER &&
             it.nodeId == selectedChapterId &&
@@ -270,13 +268,33 @@ internal fun DeclareScreen(
                     }
                 }
             }
+            if (queueItem != null) {
+                item {
+                    Section("Type de travail") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            ActivityKind.entries.forEach { kind ->
+                                FilterChip(
+                                    selected = kind == activityKind,
+                                    onClick = { activityKindName = kind.name },
+                                    label = { Text(kind.wireName.displayKindLabel()) },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             item {
                 // Duree et difficulte tenaient deux cartes pour deux rangees de
                 // pastilles. La declaration se fait apres coup, souvent debout :
                 // ce qui coute ici, c'est le defilement, pas le nombre de
                 // champs. Les deux rangees se lisent d'un coup d'oeil et gardent
                 // chacune son intitule.
-                Section("Durée et difficulté") {
+                Section("Durée") {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -317,21 +335,16 @@ internal fun DeclareScreen(
                             singleLine = true,
                         )
                     }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Difficulty.entries.forEach { difficulty ->
-                            FilterChip(
-                                selected = difficultyName == difficulty.name,
-                                onClick = { difficultyName = difficulty.name },
-                                label = { Text(difficulty.displayLabel()) },
-                            )
-                        }
-                    }
                 }
             }
-            item {
+            if (!showDetails) {
+                item {
+                    SecondaryAction(
+                        text = "Ajouter des détails",
+                        onClick = { showDetails = true },
+                    )
+                }
+            } else item {
                 Section("Unité travaillée") {
                     Row(
                         modifier = Modifier
@@ -339,6 +352,11 @@ internal fun DeclareScreen(
                             .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
+                        FilterChip(
+                            selected = unitType == null,
+                            onClick = { unitTypeName = null },
+                            label = { Text("Non précisée") },
+                        )
                         WorkUnitType.entries.forEach { type ->
                             FilterChip(
                                 selected = unitType == type,
@@ -348,6 +366,11 @@ internal fun DeclareScreen(
                         }
                     }
                     when (unitType) {
+                        null -> Text(
+                            "Aucune unité précisée.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = mutedColor,
+                        )
                         WorkUnitType.PAGES -> Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -407,32 +430,47 @@ internal fun DeclareScreen(
                     }
                 }
             }
-            item {
+            if (showDetails) item {
+                Section("Difficulté facultative") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Difficulty.entries.forEach { difficulty ->
+                            FilterChip(
+                                selected = difficultyName == difficulty.name,
+                                onClick = {
+                                    difficultyName = if (difficultyName == difficulty.name) {
+                                        null
+                                    } else {
+                                        difficulty.name
+                                    }
+                                },
+                                label = { Text(difficulty.displayLabel()) },
+                            )
+                        }
+                    }
+                }
+            }
+            if (showDetails) item {
                 // La note est facultative et l'etait deja, mais elle occupait
                 // une carte entiere et trois lignes de saisie a chaque
                 // declaration. Elle reste entiere, a un appui : c'est le seul
                 // element de l'ecran dont on peut dire qu'il ne sert presque
                 // jamais, et il prenait le plus de hauteur.
-                if (showNote || note.isNotEmpty()) {
-                    Section("Note facultative") {
-                        OutlinedTextField(
-                            value = note,
-                            onValueChange = { note = it.take(MAX_NOTE_LENGTH) },
-                            label = { Text("Note") },
-                            supportingText = if (note.length >= NOTE_COUNTER_THRESHOLD) {
-                                { Text("${note.length} / $MAX_NOTE_LENGTH") }
-                            } else {
-                                null
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            minLines = 3,
-                            maxLines = 6,
-                        )
-                    }
-                } else {
-                    SecondaryAction(
-                        text = "Ajouter une note",
-                        onClick = { showNote = true },
+                Section("Note facultative") {
+                    OutlinedTextField(
+                        value = note,
+                        onValueChange = { note = it.take(MAX_NOTE_LENGTH) },
+                        label = { Text("Note") },
+                        supportingText = if (note.length >= NOTE_COUNTER_THRESHOLD) {
+                            { Text("${note.length} / $MAX_NOTE_LENGTH") }
+                        } else {
+                            null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3,
+                        maxLines = 6,
                     )
                 }
             }
@@ -472,6 +510,7 @@ internal fun DeclareScreen(
                         } else {
                             buildActivityDeclaration(
                                 item = queueItem,
+                                activityKind = activityKind,
                                 form = form,
                                 occurredAt = occurredAt,
                             )
@@ -489,9 +528,10 @@ internal fun DeclareScreen(
                                 }.onSuccess {
                                     saved = true
                                     onSaved()
-                                    scope.launch {
+                                    declarationPostSaveScope.launch {
                                         runCatching { repository.syncAfterLocalSave() }
                                     }
+                                    onDone()
                                 }.onFailure {
                                     validationMessage =
                                         "L'enregistrement local a échoué. Rien n'a été envoyé."
@@ -501,23 +541,6 @@ internal fun DeclareScreen(
                         }
                     },
                 )
-            }
-            if (saved) {
-                // §7.2 : le mot est « Enregistré », jamais « Envoyé ». La
-                // declaration est ecrite sur l'appareil avant toute tentative
-                // reseau ; promettre l'envoi serait une promesse qu'on ne
-                // tient pas hors ligne.
-                item {
-                    Section(title = "Enregistré", kicker = "Sur cet appareil") {
-                        Text(
-                            "C'est écrit ici. L'envoi vers l'atelier se fera tout seul, " +
-                                "même si le réseau manque maintenant.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = mutedColor,
-                        )
-                        SecondaryAction(text = "Retour au parcours", onClick = onDone)
-                    }
-                }
             }
         }
     }
@@ -640,7 +663,6 @@ private fun StepReminder(item: QueueItem) {
                 color = mutedColor,
                 modifier = Modifier.weight(1f),
             )
-            Kicker(item.kind.displayKindLabel())
         }
         Text(item.label, style = MaterialTheme.typography.titleMedium)
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)

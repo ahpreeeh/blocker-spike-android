@@ -55,7 +55,6 @@ import com.albugimed.blockerspike.capture.CaptureSheet
 import com.albugimed.blockerspike.capture.NotesScreen
 import com.albugimed.blockerspike.home.TodayScreen
 import com.albugimed.blockerspike.protection.ProtectionScreen
-import com.albugimed.blockerspike.reader.ReaderActivity
 import com.albugimed.blockerspike.reader.ReadingPosition
 import com.albugimed.blockerspike.reader.ReadingsScreen
 import com.albugimed.blockerspike.study.AgendaScreen
@@ -218,20 +217,20 @@ fun AppShell() {
                             onOpenAgenda = { destination = AppDestination.AGENDA },
                             onOpenReadings = { destination = AppDestination.READINGS },
                             onDeclare = { item -> openDeclaration(context, item) },
-                            onResume = { item -> openReader(context, item) },
                         )
 
                         AppDestination.QUEUE -> StudyQueueScreen(
                             repository = repository,
                             onDeclare = { item -> openDeclaration(context, item) },
                             onDeclareFree = { openFreeDeclaration(context) },
-                            positions = positions,
-                            onResume = { item -> openReader(context, item) },
                         )
 
                         AppDestination.AGENDA -> AgendaScreen(repository = repository)
 
-                        AppDestination.SUBJECTS -> SubjectsScreen(repository = repository)
+                        AppDestination.SUBJECTS -> SubjectsScreen(
+                            repository = repository,
+                            onOpenPath = { destination = AppDestination.QUEUE },
+                        )
 
                         AppDestination.MORE -> SettingsScreen(
                             onOpen = { destination = it },
@@ -533,16 +532,4 @@ private fun openDeclaration(context: Context, item: QueueItem) {
 
 private fun openFreeDeclaration(context: Context) {
     context.startActivity(DeclareActivity.freeIntent(context))
-}
-
-private fun openReader(context: Context, item: QueueItem) {
-    val resource = item.resource ?: return
-    context.startActivity(
-        ReaderActivity.intent(
-            context = context,
-            resourceId = resource.resourceId,
-            resourceLabel = resource.label,
-            stepId = item.stepId,
-        ),
-    )
 }

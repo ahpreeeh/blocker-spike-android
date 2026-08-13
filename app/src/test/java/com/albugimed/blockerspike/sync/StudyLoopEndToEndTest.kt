@@ -161,6 +161,10 @@ class StudyLoopEndToEndTest {
         }
 
         override suspend fun current(): PathOutboxState = state
+        override suspend fun enqueueAll(commands: List<PathCommand>): Boolean {
+            commands.forEach(::enqueue)
+            return true
+        }
         override suspend fun forget(commandIds: Set<String>): Boolean {
             state = state.copy(pending = state.pending.filterNot { it.commandId in commandIds })
             return true
@@ -281,6 +285,7 @@ class StudyLoopEndToEndTest {
         )
         val built = buildActivityDeclaration(
             item = etape,
+            activityKind = ActivityKind.REVISION,
             form = form,
             occurredAt = OffsetDateTime.parse("2026-07-31T15:42:00+02:00"),
         )

@@ -153,8 +153,8 @@ class PathPresentationTest {
         val view = buildPathView(
             state(item("s1")).copy(
                 pendingPathCommands = listOf(
-                    PathCommand.PourSubject("cmd_1", "nod_cardio", "revision"),
-                    PathCommand.PourSubject("cmd_2", "nod_pharma", "reading"),
+                    PathCommand.PourSubject("cmd_1", "nod_cardio"),
+                    PathCommand.PourSubject("cmd_2", "nod_pharma"),
                 ),
             ),
         )
@@ -178,6 +178,26 @@ class PathPresentationTest {
         assertTrue(view.remaining.isEmpty())
         assertTrue(nextRows(view, 3).isEmpty())
         assertEquals("2 sur 2 terminées", pathCountsLabel(view))
+    }
+
+    @Test
+    fun reordonnerLesActivesGardeLesTermineesAncrees() {
+        val rows = buildPathView(
+            state(
+                item("s1"),
+                item("done_1", completedAt = "2026-08-01T10:00:00Z"),
+                item("s2"),
+                item("done_2", completedAt = "2026-08-02T10:00:00Z"),
+                item("s3"),
+            ),
+        ).rows
+
+        val merged = mergeMovableOrder(rows, listOf("s3", "s1", "s2"))
+
+        assertEquals(
+            listOf("s3", "done_1", "s1", "done_2", "s2"),
+            merged.map { it.item.stepId },
+        )
     }
 
     private fun state(vararg items: QueueItem) = StudyQueueState(items = items.toList())

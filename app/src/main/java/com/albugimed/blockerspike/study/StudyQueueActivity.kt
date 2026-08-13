@@ -34,8 +34,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.albugimed.blockerspike.Graph
-import com.albugimed.blockerspike.reader.ReaderActivity
 import com.albugimed.blockerspike.reader.ReadingPosition
 import com.albugimed.blockerspike.sync.EnrolOutcome
 import com.albugimed.blockerspike.sync.QueueItem
@@ -71,8 +69,6 @@ class StudyQueueActivity : ComponentActivity() {
         val repository = StudyDependencies.repository(applicationContext)
         setContent {
             AlbugimedTheme {
-                val positions by Graph.readingPositions.positions
-                    .collectAsStateWithLifecycle(initialValue = emptyMap())
                 Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
                     Box(modifier = Modifier.fillMaxSize().padding(padding)) {
                         StudyQueueScreen(
@@ -89,19 +85,6 @@ class StudyQueueActivity : ComponentActivity() {
                                 startActivity(
                                     DeclareActivity.freeIntent(this@StudyQueueActivity),
                                 )
-                            },
-                            positions = positions,
-                            onResume = { queueItem ->
-                                queueItem.resource?.let { resource ->
-                                    startActivity(
-                                        ReaderActivity.intent(
-                                            context = this@StudyQueueActivity,
-                                            resourceId = resource.resourceId,
-                                            resourceLabel = resource.label,
-                                            stepId = queueItem.stepId,
-                                        ),
-                                    )
-                                }
                             },
                         )
                     }
@@ -120,8 +103,6 @@ internal fun StudyQueueScreen(
     repository: StudyRepository,
     onDeclare: (QueueItem) -> Unit,
     onDeclareFree: () -> Unit,
-    positions: Map<String, ReadingPosition> = emptyMap(),
-    onResume: (QueueItem) -> Unit = {},
 ) {
     val state by repository.queueState.collectAsStateWithLifecycle(
         initialValue = StudyQueueState(),
@@ -136,8 +117,6 @@ internal fun StudyQueueScreen(
 
     // L'identifiant plutot que l'objet : la liste se rafraichit sous la feuille
     // ouverte, et c'est la version rechargee qu'il faut afficher.
-    var openStepId by rememberSaveable { mutableStateOf<String?>(null) }
-    val openStep = state.items.firstOrNull { it.stepId == openStepId }
     val path = remember(state) { buildPathView(state) }
 
     // L'ordre en cours de manipulation. `null` = on ne reordonne pas. Il vit
@@ -145,10 +124,7 @@ internal fun StudyQueueScreen(
     // part, et quitter l'ecran annule — deplacer une etape par erreur ne doit
     // pas se payer d'un aller-retour reseau.
     var draftOrder by rememberSaveable { mutableStateOf<List<String>?>(null) }
-    val rows = draftOrder?.let { order ->
-        val byId = path.rows.associateBy { it.item.stepId }
-        order.mapNotNull(byId::get) + path.rows.filterNot { it.item.stepId in order }
-    } ?: path.rows
+    val rows = draftOrder?.let { order -> mergeMovableOrder(path.rows, order) } ?: path.rows
 
     LaunchedEffect(repository) {
         runCatching { repository.onQueueOpened() }
@@ -230,24 +206,29 @@ internal fun StudyQueueScreen(
                 )
             }
         } else {
-            item {
-                ReorderBar(
-                    reordering = draftOrder != null,
-                    onStart = { draftOrder = rows.map { it.item.stepId } },
-                    onCancel = { draftOrder = null },
-                    onConfirm = {
-                        val ordered = draftOrder.orEmpty()
-                        draftOrder = null
-                        scope.launch {
-                            operationError = null
-                            runCatching { repository.reorderPath(ordered) }
-                                .onFailure {
-                                    operationError =
-                                        "Nouvel ordre non enregistré. Le parcours n'a pas bougé."
-                                }
-                        }
-                    },
-                )
+            if (path.remaining.size > 1 || draftOrder != null) {
+                item {
+                    ReorderBar(
+                        reordering = draftOrder != null,
+                        onStart = {
+                            draftOrder = rows.filterNot(PathRow::done).map { it.item.stepId }
+                        },
+                        onCancel = { draftOrder = null },
+                        onConfirm = {
+                            val ordered = mergeMovableOrder(path.rows, draftOrder.orEmpty())
+                                .map { it.item.stepId }
+                            draftOrder = null
+                            scope.launch {
+                                operationError = null
+                                runCatching { repository.reorderPath(ordered) }
+                                    .onFailure {
+                                        operationError =
+                                            "Nouvel ordre non enregistré. Le parcours n'a pas bougé."
+                                    }
+                            }
+                        },
+                    )
+                }
             }
             // Une carte, des rangs — et non une carte par etape. Chaque etape
             // occupait un ecran entier de defilement : on ne voyait jamais sa
@@ -264,7 +245,7 @@ internal fun StudyQueueScreen(
                         StepRow(
                             item = row.item,
                             done = row.done,
-                            onOpen = { openStepId = row.item.stepId },
+                            onOpen = { onDeclare(row.item) },
                             onToggleDone = { done ->
                                 scope.launch {
                                     operationError = null
@@ -275,17 +256,23 @@ internal fun StudyQueueScreen(
                                         }
                                 }
                             },
+                            reordering = draftOrder != null,
                             moves = draftOrder?.let {
+                                val movableRows = rows.filterNot(PathRow::done)
+                                val movableIndex = movableRows.indexOfFirst {
+                                    it.item.stepId == row.item.stepId
+                                }
+                                if (movableIndex < 0) return@let null
                                 RowMoves(
-                                    canMoveUp = index > 0,
-                                    canMoveDown = index < rows.size - 1,
+                                    canMoveUp = movableIndex > 0,
+                                    canMoveDown = movableIndex < movableRows.size - 1,
                                     onMoveUp = {
-                                        draftOrder = rows.map { r -> r.item.stepId }
-                                            .swapped(index, index - 1)
+                                        draftOrder = movableRows.map { r -> r.item.stepId }
+                                            .swapped(movableIndex, movableIndex - 1)
                                     },
                                     onMoveDown = {
-                                        draftOrder = rows.map { r -> r.item.stepId }
-                                            .swapped(index, index + 1)
+                                        draftOrder = movableRows.map { r -> r.item.stepId }
+                                            .swapped(movableIndex, movableIndex + 1)
                                     },
                                 )
                             },
@@ -296,21 +283,6 @@ internal fun StudyQueueScreen(
         }
     }
 
-    openStep?.let { step ->
-        StepSheet(
-            item = step,
-            position = step.resource?.let { positions[it.resourceId] },
-            onDismiss = { openStepId = null },
-            onResume = {
-                openStepId = null
-                onResume(step)
-            },
-            onDeclare = {
-                openStepId = null
-                onDeclare(step)
-            },
-        )
-    }
 }
 
 /**
@@ -359,6 +331,16 @@ private fun ReorderBar(
 private fun List<String>.swapped(from: Int, to: Int): List<String> {
     if (from !in indices || to !in indices) return this
     return toMutableList().also { it[from] = this[to]; it[to] = this[from] }
+}
+
+/** Replace uniquement les non terminees ; les lignes terminees gardent leur emplacement. */
+internal fun mergeMovableOrder(rows: List<PathRow>, orderedActiveIds: List<String>): List<PathRow> {
+    val activeById = rows.filterNot(PathRow::done).associateBy { it.item.stepId }
+    val named = orderedActiveIds.distinct().mapNotNull(activeById::get)
+    val namedIds = named.mapTo(mutableSetOf()) { it.item.stepId }
+    val active = (named + rows.filterNot(PathRow::done).filterNot { it.item.stepId in namedIds })
+        .iterator()
+    return rows.map { row -> if (row.done) row else active.next() }
 }
 
 @Composable

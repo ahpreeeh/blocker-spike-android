@@ -63,8 +63,7 @@ internal fun collapsePathCommands(
 
             is PathCommand.PourSubject ->
                 existing is PathCommand.PourSubject &&
-                    existing.nodeId == incoming.nodeId &&
-                    existing.kind == incoming.kind
+                    existing.nodeId == incoming.nodeId
 
             // Un ordre est absolu : le dernier dit tout, les précédents ne
             // disent plus rien.
@@ -72,6 +71,39 @@ internal fun collapsePathCommands(
         }
     }
     return kept + incoming
+}
+
+/**
+ * Réinjecte les commandes comprises sans déplacer les entrées d'une version
+ * future que cette version de l'application ne sait pas encore décoder.
+ * Les commandes remplacées par [collapsePathCommands] disparaissent à leur
+ * ancienne place ; les nouvelles sont ajoutées en queue, dans l'ordre reçu.
+ */
+internal fun mergeSerializedPathCommands(
+    rawPending: List<String>,
+    pending: List<PathCommand>,
+): List<String> {
+    val pendingById = pending.associateBy(PathCommand::commandId)
+    val emitted = mutableSetOf<String>()
+    return buildList {
+        rawPending.forEach { serialized ->
+            val decoded = PathCommandJson.decode(serialized)
+            if (decoded == null) {
+                add(serialized)
+            } else {
+                pendingById[decoded.commandId]?.let { surviving ->
+                    if (emitted.add(surviving.commandId)) {
+                        add(PathCommandJson.encodeToString(surviving))
+                    }
+                }
+            }
+        }
+        pending.forEach { command ->
+            if (emitted.add(command.commandId)) {
+                add(PathCommandJson.encodeToString(command))
+            }
+        }
+    }
 }
 
 class PathCommandOutboxRepository(
@@ -113,20 +145,30 @@ class PathCommandOutboxRepository(
      * geste qui paraît pris alors que rien n'est enregistré est le seul cas où
      * l'écran ment.
      */
-    suspend fun enqueue(command: PathCommand): Boolean = mutate(
-        "Geste de parcours en attente : ${command.javaClass.simpleName}",
-    ) { prefs ->
-        val pending = readArray(prefs[Keys.PENDING]).mapNotNull(PathCommandJson::decode)
-        if (pending.size >= PATH_OUTBOX_ALERT_THRESHOLD) {
-            logger.add(
-                SyncLogger.TAG_ERROR,
-                "File des gestes au-delà de $PATH_OUTBOX_ALERT_THRESHOLD entrées : " +
-                    "les envois n'aboutissent plus depuis longtemps.",
-            )
+    suspend fun enqueue(command: PathCommand): Boolean = enqueueAll(listOf(command))
+
+    /**
+     * Ecrit un lot dans une seule transaction DataStore. Les entrees illisibles
+     * preexistantes sont conservees mot pour mot : ajouter un geste ne doit pas
+     * reparer le magasin en supprimant ce que l'application ne comprend pas.
+     */
+    override suspend fun enqueueAll(commands: List<PathCommand>): Boolean {
+        if (commands.isEmpty()) return true
+        return mutate("Gestes de parcours en attente : ${commands.size}") { prefs ->
+            val rawPending = readArray(prefs[Keys.PENDING])
+            var pending = rawPending.mapNotNull(PathCommandJson::decode)
+            if (pending.size >= PATH_OUTBOX_ALERT_THRESHOLD) {
+                logger.add(
+                    SyncLogger.TAG_ERROR,
+                    "File des gestes au-delà de $PATH_OUTBOX_ALERT_THRESHOLD entrées : " +
+                        "les envois n'aboutissent plus depuis longtemps.",
+                )
+            }
+            commands.forEach { command ->
+                pending = collapsePathCommands(pending, command)
+            }
+            prefs[Keys.PENDING] = writeArray(mergeSerializedPathCommands(rawPending, pending))
         }
-        prefs[Keys.PENDING] = writeArray(
-            collapsePathCommands(pending, command).map(PathCommandJson::encodeToString),
-        )
     }
 
     /** Retire les gestes que le serveur a appliqués — ou jugés sans effet. */

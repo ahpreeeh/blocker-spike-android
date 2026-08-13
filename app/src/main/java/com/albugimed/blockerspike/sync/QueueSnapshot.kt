@@ -34,7 +34,11 @@ data class QueueSnapshot(
 data class QueueItem(
     val stepId: String,
     val label: String,
-    val kind: String,
+    /**
+     * Ancienne nature portee par l'etape. Les nouvelles etapes peuvent ne plus
+     * l'envoyer : le type de travail est choisi au moment de la declaration.
+     */
+    val kind: String? = null,
     val subject: NodeRef,
     val chapter: NodeRef?,
     val resource: ResourceRef?,
@@ -177,10 +181,12 @@ object QueueSnapshotJson {
             val json = JSONObject()
                 .put("step_id", item.stepId)
                 .put("label", item.label)
-                .put("kind", item.kind)
                 .put("subject", encodeNode(item.subject))
                 .put("signals", encodeSignals(item.signals))
-                .apply { item.completedAt?.let { put("completed_at", it) } }
+                .apply {
+                    item.kind?.takeIf(String::isNotBlank)?.let { put("kind", it) }
+                    item.completedAt?.let { put("completed_at", it) }
+                }
             item.chapter?.let { json.put("chapter", encodeNode(it)) }
             item.resource?.let { resource ->
                 json.put(
@@ -299,7 +305,9 @@ object QueueSnapshotJson {
         return QueueItem(
             stepId = stepId,
             label = json.optStringOrNull("label") ?: subject.label,
-            kind = json.optString("kind"),
+            // Absent, JSON null et chaine blanche sont la meme absence. Un
+            // ancien type non vide reste conserve pour relire les vieux caches.
+            kind = json.optStringOrNull("kind"),
             subject = subject,
             chapter = json.optJSONObject("chapter")?.let(::decodeNode),
             resource = json.optJSONObject("resource")?.let { resource ->

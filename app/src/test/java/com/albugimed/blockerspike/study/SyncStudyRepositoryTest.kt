@@ -9,6 +9,10 @@ import com.albugimed.blockerspike.sync.DeadEvent
 import com.albugimed.blockerspike.sync.Difficulty
 import com.albugimed.blockerspike.sync.EnrolOutcome
 import com.albugimed.blockerspike.sync.OutboxState
+import com.albugimed.blockerspike.sync.PathCommand
+import com.albugimed.blockerspike.sync.PathCommandOutbox
+import com.albugimed.blockerspike.sync.PathOutboxState
+import com.albugimed.blockerspike.sync.DeadPathCommand
 import com.albugimed.blockerspike.sync.QueueSnapshot
 import com.albugimed.blockerspike.sync.StudyEvent
 import com.albugimed.blockerspike.sync.StudyEventType
@@ -28,6 +32,7 @@ class SyncStudyRepositoryTest {
         durationMinutes = 35,
         unit = ActivityUnit.Pages(47, 62),
         difficulty = Difficulty.HARD,
+        activityKind = ActivityKind.REVISION,
         note = "à revoir",
     )
 
@@ -113,6 +118,60 @@ class SyncStudyRepositoryTest {
         repository.retryPending()
 
         assertEquals(listOf(false, true), forces)
+    }
+
+    @Test
+    fun `batch subject add is one local write then one sync attempt`() = runTest {
+        val calls = mutableListOf<String>()
+        var commands = emptyList<PathCommand>()
+        val pathOutbox = object : PathCommandOutbox {
+            override suspend fun current() = PathOutboxState()
+            override suspend fun enqueueAll(incoming: List<PathCommand>): Boolean {
+                calls += "enqueue:${incoming.size}"
+                commands = incoming
+                return true
+            }
+            override suspend fun forget(commandIds: Set<String>) = true
+            override suspend fun bury(rejected: List<DeadPathCommand>) = true
+        }
+        val repository = SyncStudyRepository(
+            cachedQueues = MutableStateFlow(CachedQueue()),
+            outboxStates = MutableStateFlow(OutboxState()),
+            enqueue = { true },
+            pathCommandOutbox = pathOutbox,
+            requestSync = { calls += "sync:$it" },
+            nowMillis = { 100L },
+            commandIdFactory = { "cmd_$it" },
+        )
+
+        repository.addSubjectsToPath(listOf("nod_cardio", "nod_pharma", "nod_cardio"))
+
+        assertEquals(listOf("enqueue:2", "sync:false"), calls)
+        assertEquals(
+            listOf(
+                PathCommand.PourSubject("cmd_100", "nod_cardio"),
+                PathCommand.PourSubject("cmd_101", "nod_pharma"),
+            ),
+            commands,
+        )
+    }
+
+    @Test
+    fun `offline after subject batch does not undo its local save`() = runTest {
+        val repository = SyncStudyRepository(
+            cachedQueues = MutableStateFlow(CachedQueue()),
+            outboxStates = MutableStateFlow(OutboxState()),
+            enqueue = { true },
+            pathCommandOutbox = object : PathCommandOutbox {
+                override suspend fun current() = PathOutboxState()
+                override suspend fun enqueueAll(commands: List<PathCommand>) = true
+                override suspend fun forget(commandIds: Set<String>) = true
+                override suspend fun bury(rejected: List<DeadPathCommand>) = true
+            },
+            requestSync = { error("offline") },
+        )
+
+        repository.addSubjectsToPath(listOf("nod_cardio", "nod_pharma"))
     }
 
     @Test

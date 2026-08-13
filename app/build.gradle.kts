@@ -56,8 +56,8 @@ android {
         create("permanent") {
             dimension = "identity"
             applicationId = "com.albugimed.app"
-            versionCode = 13
-            versionName = "0.9.2-gestes"
+            versionCode = 14
+            versionName = "0.10.0-parcours"
             manifestPlaceholders["deviceAdminReceiverClass"] =
                 "com.albugimed.app.admin.AlbugimedDeviceAdminReceiver"
             manifestPlaceholders["applicationLabel"] = "Albugimed"

@@ -21,6 +21,8 @@ interface StudyOutbox {
  */
 interface PathCommandOutbox {
     suspend fun current(): PathOutboxState
+    /** Ecriture atomique d'un lot avant l'unique tentative reseau. */
+    suspend fun enqueueAll(commands: List<PathCommand>): Boolean
     suspend fun forget(commandIds: Set<String>): Boolean
     suspend fun bury(rejected: List<DeadPathCommand>): Boolean
 }

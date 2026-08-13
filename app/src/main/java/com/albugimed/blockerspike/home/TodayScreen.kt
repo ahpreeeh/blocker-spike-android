@@ -19,10 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -35,7 +32,6 @@ import com.albugimed.blockerspike.reader.ReadingPosition
 import com.albugimed.blockerspike.study.AgendaRowBlock
 import com.albugimed.blockerspike.study.AgendaState
 import com.albugimed.blockerspike.study.StepRow
-import com.albugimed.blockerspike.study.StepSheet
 import com.albugimed.blockerspike.study.StudyQueueState
 import com.albugimed.blockerspike.study.StudyRepository
 import com.albugimed.blockerspike.study.buildAgendaHeaderPresentation
@@ -94,7 +90,6 @@ fun TodayScreen(
     onOpenAgenda: () -> Unit,
     onOpenReadings: () -> Unit,
     onDeclare: (QueueItem) -> Unit,
-    onResume: (QueueItem) -> Unit,
 ) {
     val context = LocalContext.current
     val queueState by repository.queueState.collectAsStateWithLifecycle(
@@ -122,10 +117,6 @@ fun TodayScreen(
         positions.values.maxByOrNull { it.updatedAtMillis }
     }
 
-    // L'identifiant plutot que l'objet : la file se rafraichit sous la feuille
-    // ouverte, et c'est la version rechargee qu'il faut afficher.
-    var openStepId by rememberSaveable { mutableStateOf<String?>(null) }
-    val openStep = queueState.items.firstOrNull { it.stepId == openStepId }
     val path = remember(queueState) { buildPathView(queueState) }
 
     LazyColumn(
@@ -144,7 +135,7 @@ fun TodayScreen(
                 if (next.isEmpty()) {
                     Text(
                         if (path.rows.isEmpty()) {
-                            "Le parcours est vide. Envoie des matières dedans depuis l'atelier."
+                            "Le parcours est vide. Ajoute des matières depuis Matières."
                         } else {
                             "Tout le parcours est terminé."
                         },
@@ -157,7 +148,10 @@ fun TodayScreen(
                         if (index > 0) {
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         }
-                        StepRow(item = row.item, onOpen = { openStepId = row.item.stepId })
+                        StepRow(
+                            item = row.item,
+                            onOpen = { onDeclare(row.item) },
+                        )
                     }
                     SecondaryAction(
                         text = pathCountsLabel(path),
@@ -257,21 +251,6 @@ fun TodayScreen(
         }
     }
 
-    openStep?.let { step ->
-        StepSheet(
-            item = step,
-            position = step.resource?.let { positions[it.resourceId] },
-            onDismiss = { openStepId = null },
-            onResume = {
-                openStepId = null
-                onResume(step)
-            },
-            onDeclare = {
-                openStepId = null
-                onDeclare(step)
-            },
-        )
-    }
 }
 
 /**

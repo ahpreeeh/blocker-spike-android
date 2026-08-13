@@ -26,14 +26,29 @@ data class SubjectView(
     /** Nombre d'etapes de cette matiere presentes dans le parcours. */
     val inPathCount: Int,
     /**
-     * Versements demandes et pas encore confirmes, par nature de travail.
+     * Ajout de cette matiere demande et pas encore confirme.
      *
      * Ils ne peuvent pas etre appliques ici : c'est l'atelier qui frappe les
      * identifiants d'etape, et inventer des lignes en attendant montrerait un
      * parcours que personne n'a. La matiere le **dit** donc, sans le montrer.
      */
-    val pouringKinds: List<String> = emptyList(),
-)
+    val addPending: Boolean = false,
+) {
+    val pathPresence: SubjectPathPresence
+        get() {
+            val present = chapters.count(ChapterView::inPath)
+            return when {
+                chapters.isEmpty() || present == 0 -> SubjectPathPresence.NONE
+                present == chapters.size -> SubjectPathPresence.FULL
+                else -> SubjectPathPresence.PARTIAL
+            }
+        }
+
+    val canAdd: Boolean
+        get() = chapters.isNotEmpty() && pathPresence != SubjectPathPresence.FULL && !addPending
+}
+
+enum class SubjectPathPresence { NONE, PARTIAL, FULL }
 
 data class ChapterView(
     val nodeId: String,
@@ -57,10 +72,10 @@ fun buildSubjectViews(state: StudyQueueState): List<SubjectView> {
         chaptersBySubject.getOrPut(parentId) { mutableListOf() }.add(node)
     }
 
-    val pouringBySubject = LinkedHashMap<String, MutableList<String>>()
+    val pouringSubjects = mutableSetOf<String>()
     for (command in state.pendingPathCommands) {
         if (command !is PathCommand.PourSubject) continue
-        pouringBySubject.getOrPut(command.nodeId) { mutableListOf() }.add(command.kind)
+        pouringSubjects += command.nodeId
     }
 
     return state.nodes
@@ -79,7 +94,7 @@ fun buildSubjectViews(state: StudyQueueState): List<SubjectView> {
                     )
                 },
                 inPathCount = stepsBySubject[subject.nodeId] ?: 0,
-                pouringKinds = pouringBySubject[subject.nodeId].orEmpty(),
+                addPending = subject.nodeId in pouringSubjects,
             )
         }
 }
@@ -132,26 +147,9 @@ fun subjectCountsLabel(subject: SubjectView): String {
  * laisserait croire a une panne. `null` quand il n'y a rien en attente — la
  * ligne disparait alors entierement.
  */
-fun pouringKindsLabel(kinds: List<String>): String? {
-    if (kinds.isEmpty()) return null
-    val named = kinds.distinct().joinToString(", ") { it.displayKindLabel() }
-    return "$named : en attente d'envoi"
+fun pathPresenceLabel(subject: SubjectView): String? = when {
+    subject.addPending -> "Ajout au parcours en attente d'envoi"
+    subject.pathPresence == SubjectPathPresence.FULL -> "Entierement dans le parcours"
+    subject.pathPresence == SubjectPathPresence.PARTIAL -> "Partiellement dans le parcours"
+    else -> null
 }
-
-/**
- * Ce que verser veut dire, dit avant de le faire.
- *
- * Le nombre de chapitres est une **borne haute** : l'atelier saute ceux qui sont
- * deja dans le parcours avec cette nature. Annoncer « 18 etapes » puis en creer
- * trois ferait mentir le bouton, d'ou le « jusqu'a ».
- */
-fun pourPromptLabel(subject: SubjectView): String = when (subject.chapters.size) {
-    0 -> "Cette matière n'a aucun chapitre : rien ne partira."
-    1 -> "Jusqu'à 1 chapitre ira dans le parcours. Ceux qui y sont déjà sont ignorés."
-    else ->
-        "Jusqu'à ${subject.chapters.size} chapitres iront dans le parcours. " +
-            "Ceux qui y sont déjà sont ignorés."
-}
-
-/** Les quatre natures de travail, dans l'ordre de l'atelier. */
-val POUR_KINDS: List<String> = listOf("first_study", "revision", "training", "reading")

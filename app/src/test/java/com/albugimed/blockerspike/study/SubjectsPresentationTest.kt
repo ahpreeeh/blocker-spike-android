@@ -144,50 +144,30 @@ class SubjectsPresentationTest {
                 subject("nod_pharma", "Pharmacologie"),
             ),
             pendingPathCommands = listOf(
-                PathCommand.PourSubject("cmd_1", "nod_cardio", "revision"),
-                PathCommand.PourSubject("cmd_2", "nod_cardio", "training"),
+                PathCommand.PourSubject("cmd_1", "nod_cardio"),
             ),
         )
 
         val views = buildSubjectViews(state)
 
-        assertEquals(listOf("revision", "training"), views[0].pouringKinds)
-        assertTrue(views[1].pouringKinds.isEmpty())
+        assertTrue(views[0].addPending)
+        assertFalse(views[1].addPending)
     }
 
     @Test
-    fun lAttenteSeDitEnToutesLettres() {
-        assertEquals(null, pouringKindsLabel(emptyList()))
-        assertEquals("Révision : en attente d'envoi", pouringKindsLabel(listOf("revision")))
-        assertEquals(
-            "Révision, Entraînement : en attente d'envoi",
-            pouringKindsLabel(listOf("revision", "training")),
-        )
-    }
+    fun lAppartenanceCompleteEtPartielleEstExplicite() {
+        val none = view(chapters = 2, inPath = 0)
+        val partial = none.copy(chapters = none.chapters.mapIndexed { index, chapter ->
+            chapter.copy(inPath = index == 0)
+        })
+        val full = none.copy(chapters = none.chapters.map { it.copy(inPath = true) })
 
-    @Test
-    fun leVersementSAnnonceCommeUneBorneHauteJamaisCommeUnCompte() {
-        // L'atelier saute les chapitres déjà présents dans cette nature :
-        // annoncer « 18 étapes » puis en créer trois ferait mentir le bouton.
-        assertEquals(
-            "Jusqu'à 18 chapitres iront dans le parcours. Ceux qui y sont déjà sont ignorés.",
-            pourPromptLabel(view(chapters = 18, inPath = 3)),
-        )
-        assertEquals(
-            "Jusqu'à 1 chapitre ira dans le parcours. Ceux qui y sont déjà sont ignorés.",
-            pourPromptLabel(view(chapters = 1, inPath = 0)),
-        )
-        assertEquals(
-            "Cette matière n'a aucun chapitre : rien ne partira.",
-            pourPromptLabel(view(chapters = 0, inPath = 0)),
-        )
-    }
-
-    @Test
-    fun lesQuatreNaturesSontCellesDuContrat() {
-        // La même liste que `ACTIVITY_KINDS` côté serveur : une cinquième nature
-        // partirait en commande et reviendrait « kind inconnu ».
-        assertEquals(listOf("first_study", "revision", "training", "reading"), POUR_KINDS)
+        assertEquals(SubjectPathPresence.NONE, none.pathPresence)
+        assertEquals(SubjectPathPresence.PARTIAL, partial.pathPresence)
+        assertEquals(SubjectPathPresence.FULL, full.pathPresence)
+        assertTrue(none.canAdd)
+        assertTrue(partial.canAdd)
+        assertFalse(full.canAdd)
     }
 
     private fun subject(

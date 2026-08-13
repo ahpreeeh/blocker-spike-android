@@ -1,9 +1,11 @@
 package com.albugimed.blockerspike.study
 
 import com.albugimed.blockerspike.sync.ActivityUnit
+import com.albugimed.blockerspike.sync.ActivityKind
 import com.albugimed.blockerspike.sync.Difficulty
 import com.albugimed.blockerspike.sync.EnrolOutcome
 import com.albugimed.blockerspike.sync.NodeRef
+import com.albugimed.blockerspike.sync.PathCommand
 import com.albugimed.blockerspike.sync.QueueItem
 import com.albugimed.blockerspike.sync.QueueSignals
 import kotlinx.coroutines.test.runTest
@@ -36,6 +38,7 @@ class InMemoryStudyRepositoryTest {
             durationMinutes = 30,
             unit = ActivityUnit.Chapter,
             difficulty = Difficulty.OK,
+            activityKind = ActivityKind.FIRST_STUDY,
             note = null,
         )
 
@@ -55,6 +58,18 @@ class InMemoryStudyRepositoryTest {
         repository.retryPending()
 
         assertEquals(2, repository.queueState.value.pendingCount)
+    }
+
+    @Test
+    fun `grouped subject addition keeps one distinct command per subject`() = runTest {
+        val repository = InMemoryStudyRepository()
+
+        repository.addSubjectsToPath(listOf("nod_cardio", "nod_pharma", "nod_cardio"))
+
+        val commands = repository.queueState.value.pendingPathCommands
+            .filterIsInstance<PathCommand.PourSubject>()
+        assertEquals(listOf("nod_cardio", "nod_pharma"), commands.map { it.nodeId })
+        assertEquals(2, commands.map { it.commandId }.toSet().size)
     }
 
     @Test

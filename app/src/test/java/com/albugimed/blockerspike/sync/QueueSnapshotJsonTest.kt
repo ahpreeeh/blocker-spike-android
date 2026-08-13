@@ -95,6 +95,21 @@ class QueueSnapshotJsonTest {
     }
 
     @Test
+    fun uneEtapeFutureSansNatureResteLisibleEtLeCacheNOmetPasDeFausseValeur() {
+        listOf("", ",\"kind\":null", ",\"kind\":\"   \"").forEach { kindField ->
+            val snapshot = QueueSnapshotJson.decode(
+                """{"generated_at":"x","items":[{"step_id":"stp_1","label":"ECG"$kindField,"subject":{"node_id":"nod_c","label":"Cardio"},"signals":{}}]}""",
+            )!!
+
+            assertNull(snapshot.items.single().kind)
+            val encoded = org.json.JSONObject(QueueSnapshotJson.encode(snapshot))
+                .getJSONArray("items")
+                .getJSONObject(0)
+            assertTrue(!encoded.has("kind"))
+        }
+    }
+
+    @Test
     fun lesNoeudsConserventLOrdrePlatDuServeur() {
         val nodes = QueueSnapshotJson.decode(corps)!!.nodes
 

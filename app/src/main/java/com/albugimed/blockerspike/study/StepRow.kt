@@ -40,19 +40,18 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * Une etape de travail, en trois lignes et rien de plus.
+ * Un chapitre du parcours, en deux lignes et rien de plus.
  *
  * Elle remplace la carte haute qui portait le titre, deux faits etiquetes et
  * jusqu'a trois boutons. Une file de six etapes faisait alors six ecrans de
  * defilement : on ne voyait jamais sa liste, seulement un morceau.
  *
- * Les trois lignes disent, dans cet ordre, **quoi**, **ou** et **quand pour la
- * derniere fois**. Les actions ne sont pas ici : elles vivent dans la feuille
- * qu'ouvre le chevron. Un rang de liste qui porte deux boutons cesse d'etre un
- * rang, et c'est exactement ce qui rendait l'ecran illisible.
+ * Les deux lignes disent **quoi** et **dans quelle matiere**. Le type de
+ * travail et la progression restent hors du parcours : l'un se choisit dans
+ * la declaration, l'autre se lit dans Matières.
  *
  * Aucun tri, aucun badge, aucune couleur d'alerte : la pastille identifie la
- * matiere, la troisieme ligne est un fait date (cadrage §1.1).
+ * matiere sans classer le chapitre (cadrage §1.1).
  *
  * La coche est la seule action posee sur le rang, et elle y est parce qu'elle
  * est le geste le plus frequent du parcours : l'enfouir sous un chevron
@@ -68,6 +67,7 @@ internal fun StepRow(
     done: Boolean = false,
     onToggleDone: ((Boolean) -> Unit)? = null,
     moves: RowMoves? = null,
+    reordering: Boolean = false,
 ) {
     // Grise et barre, sans jamais retirer de la liste ni changer de place. Une
     // etape terminee reste lisible : c'est ce qu'on a franchi, pas un dechet.
@@ -77,13 +77,13 @@ internal fun StepRow(
             .fillMaxWidth()
             // En reordonnancement la ligne cesse d'etre un raccourci : le seul
             // geste possible est de la deplacer.
-            .then(if (moves == null) Modifier.clickable(onClick = onOpen) else Modifier)
+            .then(if (!reordering) Modifier.clickable(onClick = onOpen) else Modifier)
             .heightIn(min = 56.dp)
             .padding(vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (onToggleDone != null && moves == null) {
+        if (onToggleDone != null && !reordering) {
             TickBox(checked = done, onCheckedChange = onToggleDone)
         }
         Column(
@@ -104,32 +104,29 @@ internal fun StepRow(
             ) {
                 SubjectDot(item.subject.label)
                 Text(
-                    "${item.subject.label} · ${item.kind.displayKindLabel()}",
+                    item.subject.label,
                     style = MaterialTheme.typography.bodySmall,
                     color = mutedColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Text(
-                stepTraceLabel(item),
-                style = MaterialTheme.typography.labelSmall,
-                color = mutedColor,
-            )
         }
-        if (moves != null) {
-            GlyphButton(
-                icon = AppIcon.ARROW_UP,
-                label = "Monter",
-                enabled = moves.canMoveUp,
-                onClick = moves.onMoveUp,
-            )
-            GlyphButton(
-                icon = AppIcon.ARROW_DOWN,
-                label = "Descendre",
-                enabled = moves.canMoveDown,
-                onClick = moves.onMoveDown,
-            )
+        if (reordering) {
+            moves?.let {
+                GlyphButton(
+                    icon = AppIcon.ARROW_UP,
+                    label = "Monter",
+                    enabled = it.canMoveUp,
+                    onClick = it.onMoveUp,
+                )
+                GlyphButton(
+                    icon = AppIcon.ARROW_DOWN,
+                    label = "Descendre",
+                    enabled = it.canMoveDown,
+                    onClick = it.onMoveDown,
+                )
+            }
         } else {
             Chevron()
         }
@@ -212,7 +209,7 @@ internal fun StepSheet(
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Kicker("${item.subject.label} · ${item.kind.displayKindLabel()}")
+            Kicker(item.subject.label)
             Text(item.label, style = MaterialTheme.typography.headlineSmall)
             item.resource?.let { resource ->
                 Text(

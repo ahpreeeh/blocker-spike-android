@@ -47,18 +47,37 @@ class PathCommandCollapseTest {
     }
 
     @Test
-    fun verserDeuxFoisLaMemeNatureNeCompteQuUneFois() {
-        val revision = PathCommand.PourSubject("cmd_1", "nod_cardio", "revision")
-        val encore = PathCommand.PourSubject("cmd_2", "nod_cardio", "revision")
-        // La même matière dans une autre nature est un versement différent : il
-        // crée d'autres étapes et doit donc survivre.
-        val entrainement = PathCommand.PourSubject("cmd_3", "nod_cardio", "training")
+    fun verserDeuxFoisLaMemeMatiereNeCompteQuUneFois() {
+        val premierVersement = PathCommand.PourSubject("cmd_1", "nod_cardio")
+        val encore = PathCommand.PourSubject("cmd_2", "nod_cardio")
+        // Une autre matière est un autre versement et doit donc survivre.
+        val autreMatiere = PathCommand.PourSubject("cmd_3", "nod_pharma")
 
-        var file = collapsePathCommands(emptyList(), revision)
+        var file = collapsePathCommands(emptyList(), premierVersement)
         file = collapsePathCommands(file, encore)
-        file = collapsePathCommands(file, entrainement)
+        file = collapsePathCommands(file, autreMatiere)
 
-        assertEquals(listOf(encore, entrainement), file)
+        assertEquals(listOf(encore, autreMatiere), file)
+    }
+
+    @Test
+    fun uneEntreeInconnueGardeSaPlaceLorsDUnAjout() {
+        val premier = PathCommand.PourSubject("cmd_1", "nod_cardio")
+        val second = PathCommand.PourSubject("cmd_2", "nod_pharma")
+        val nouveau = PathCommand.ReorderPath("cmd_3", listOf("stp_2", "stp_1"))
+        val futureCommand = """{"command_id":"future_1","type":"future_command"}"""
+        val raw = listOf(
+            PathCommandJson.encodeToString(premier),
+            futureCommand,
+            PathCommandJson.encodeToString(second),
+        )
+
+        val merged = mergeSerializedPathCommands(raw, listOf(premier, second, nouveau))
+
+        assertEquals(PathCommandJson.encodeToString(premier), merged[0])
+        assertEquals(futureCommand, merged[1])
+        assertEquals(PathCommandJson.encodeToString(second), merged[2])
+        assertEquals(PathCommandJson.encodeToString(nouveau), merged[3])
     }
 
     @Test
@@ -67,7 +86,7 @@ class PathCommandCollapseTest {
         // ordre ne connaît pas les étapes que le versement vient de créer. La
         // file est donc une liste, jamais un ensemble.
         val coche = PathCommand.CompleteStep("cmd_1", "stp_1", true, MOMENT)
-        val versement = PathCommand.PourSubject("cmd_2", "nod_cardio", "revision")
+        val versement = PathCommand.PourSubject("cmd_2", "nod_cardio")
         val ordre = PathCommand.ReorderPath("cmd_3", listOf("stp_2", "stp_1"))
 
         var file = collapsePathCommands(emptyList(), coche)

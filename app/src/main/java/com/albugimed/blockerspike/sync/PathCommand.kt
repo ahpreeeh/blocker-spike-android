@@ -37,7 +37,6 @@ sealed interface PathCommand {
     data class PourSubject(
         override val commandId: String,
         val nodeId: String,
-        val kind: String,
     ) : PathCommand
 
     data class ReorderPath(
@@ -87,7 +86,6 @@ object PathCommandJson {
             is PathCommand.PourSubject -> json
                 .put("type", "pour_subject")
                 .put("node_id", command.nodeId)
-                .put("kind", command.kind)
 
             is PathCommand.ReorderPath -> json
                 .put("type", "reorder_path")
@@ -110,14 +108,13 @@ object PathCommandJson {
             "complete_step" -> PathCommand.CompleteStep(
                 commandId = commandId,
                 stepId = root.optStringOrNull("step_id") ?: return null,
-                completed = root.optBoolean("completed"),
+                completed = root.opt("completed") as? Boolean ?: return null,
                 completedAt = root.optStringOrNull("completed_at") ?: return null,
             )
 
             "pour_subject" -> PathCommand.PourSubject(
                 commandId = commandId,
                 nodeId = root.optStringOrNull("node_id") ?: return null,
-                kind = root.optStringOrNull("kind") ?: return null,
             )
 
             "reorder_path" -> {
